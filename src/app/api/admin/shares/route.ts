@@ -1,0 +1,103 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/prisma'
+
+// GET /api/admin/shares?status=&type=&page=&limit=&search=
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url)
+  const status = searchParams.get('status') as 'pending' | 'approved' | 'rejected' | 'suspended' | null
+  const type = searchParams.get('type') as 'tool' | 'life' | null
+  const page = parseInt(searchParams.get('page') || '1')
+  const limit = parseInt(searchParams.get('limit') || '10')
+  const search = searchParams.get('search') || ''
+  const skip = (page - 1) * limit
+
+  // 构建 WHERE 条件
+  const whereConditions: string[] = []
+  if (status) whereConditions.push(`s.status = '${status}'`)
+  if (type) whereConditions.push(`s.type = '${type}'`)
+  if (search) {
+    whereConditions.push(`(
+      s.content LIKE '%${search}%' OR 
+      u.username LIKE '%${search}%' OR 
+      t.name LIKE '%${search}%'
+    )`)
+  }
+  const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : ''
+
+  // 使用原始 SQL 查询确保获取所有字段包括 video
+  const shares = await prisma.$queryRawUnsafe(`
+    SELECT 
+      s.id, s.type, s.content, s.images, s.video, s.likes, s.status, 
+      s.suspendedReason, 
+      strftime('%Y-%m-%dT%H:%M:%S', s.suspendedAt) as suspendedAt,
+      strftime('%Y-%m-%dT%H:%M:%S', s.createdAt) as createdAt,
+      s.userId, s.toolId,
+      s.submitToolName, s.submitToolWebsite, s.submitToolDesc,
+      s.submitToolCategory, s.submitToolPricing, s.submitToolGithub, s.submitToolLogo,
+      u.id as userId, u.username as userUsername, u.avatarUrl as userAvatarUrl,
+      t.id as toolId, t.name as toolName, t.slug as toolSlug,
+      (SELECT COUNT(*) FROM share_comments sc WHERE sc.shareId = s.id) as commentsCount
+    FROM shares s
+    LEFT JOIN users u ON s.userId = u.id
+    LEFT JOIN tools t ON s.toolId = t.id
+    ${whereClause}
+    ORDER BY s.createdAt DESC
+    LIMIT ${limit} OFFSET ${skip}
+  `)
+
+  // 转换数据格式以匹配前端期望的结构
+  const formattedShares = (shares as any[]).map(share => ({
+    id: share.id,
+    type: share.type,
+    content: share.content,
+    images: share.images,
+    video: share.video,
+    likes: share.likes,
+    status: share.status,
+    suspendedReason: share.suspendedReason,
+    suspendedAt: share.suspendedAt,
+    createdAt: share.createdAt,
+    userId: share.userId,
+    toolId: share.toolId,
+    submitToolName: share.submitToolName,
+    submitToolWebsite: share.submitToolWebsite,
+    submitToolDesc: share.submitToolDesc,
+    submitToolCategory: share.submitToolCategory,
+    submitToolPricing: share.submitToolPricing,
+    submitToolGithub: share.submitToolGithub,
+    submitToolLogo: share.submitToolLogo,
+    user: share.userId ? {
+      id: share.userId,
+      username: share.userUsername,
+      avatarUrl: share.userAvatarUrl
+    } : null,
+    tool: share.toolId ? {
+      id: share.toolId,
+      name: share.toolName,
+      slug: share.toolSlug
+    } : null,
+    _count: {
+      comments: Number(share.commentsCount || 0)
+    }
+  }))
+
+  const [totalResult, pending, approved, rejected, suspended, toolCount, lifeCount] = await Promise.all([
+    prisma.$queryRawUnsafe(`SELECT COUNT(*) as count FROM shares s ${whereClause}`),
+    prisma.share.count({ where: { status: 'pending' } }),
+    prisma.share.count({ where: { status: 'approved' } }),
+    prisma.share.count({ where: { status: 'rejected' } }),
+    prisma.share.count({ where: { status: 'suspended' } }),
+    prisma.share.count({ where: { type: 'tool' } }),
+    prisma.share.count({ where: { type: 'life' } })
+  ])
+
+  const total = Number((totalResult as any[])[0]?.count || 0)
+
+  return NextResponse.json({
+    shares: formattedShares,
+    total,
+    page,
+    totalPages: Math.ceil(total / limit),
+    stats: { pending, approved, rejected, suspended, total: pending + approved + rejected + suspended, tool: toolCount, life: lifeCount }
+  })
+}

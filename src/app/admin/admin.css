@@ -1,0 +1,33 @@
+/* Admin page styles - override cyberpunk theme */
+html,
+body {
+  background-color: #f3f4f6 !important;
+  color: #1f2937 !important;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+}
+
+.admin-layout {
+  min-height: 100vh;
+  background-color: #f3f4f6;
+}
+
+/* Override any cyberpunk background patterns */
+.admin-layout::before,
+.admin-layout::after {
+  display: none !important;
+}
+
+/* Override scrollbar for admin */
+.admin-layout ::-webkit-scrollbar-track {
+  background: #f3f4f6 !important;
+}
+
+.admin-layout ::-webkit-scrollbar-thumb {
+  background: #d1d5db !important;
+  box-shadow: none !important;
+}
+
+.admin-layout ::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af !important;
+  box-shadow: none !important;
+}

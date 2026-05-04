@@ -1,0 +1,275 @@
+/**
+ * 最新 AI 工具抓取脚本
+ * 从 GitHub 和 RSS 源抓取最近发布的 AI 工具
+ */
+
+import { readFileSync } from 'fs'
+import { resolve } from 'path'
+import { execSync } from 'child_process'
+import Parser from 'rss-parser'
+import { prisma } from '@/lib/prisma'
+
+// 加载 .env 文件（tsx 不会自动加载）
+try {
+  const envPath = resolve(process.cwd(), '.env')
+  const envContent = readFileSync(envPath, 'utf-8')
+  for (const line of envContent.split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+    const eqIndex = trimmed.indexOf('=')
+    if (eqIndex > 0) {
+      const key = trimmed.slice(0, eqIndex).trim()
+      const val = trimmed.slice(eqIndex + 1).trim().replace(/^["']|["']$/g, '')
+      if (!process.env[key]) process.env[key] = val
+    }
+  }
+  console.log('✅ 已加载 .env 环境变量')
+} catch {
+  console.log('⚠️ 未找到 .env 文件，使用系统环境变量')
+}
+
+const rssParser = new Parser()
+
+// RSS 源配置
+const rssSources = [
+  {
+    name: 'Product Hunt - AI',
+    url: 'https://www.producthunt.com/feed?category=ai',
+    type: 'product_hunt'
+  },
+  {
+    name: '量子位',
+    url: 'https://www.qbitai.com/rss',
+    type: 'news'
+  },
+]
+
+const DAYS_LIMIT = 30
+
+// 从 RSS 源获取最新 AI 工具
+async function fetchFromRSS(itemLimit: number = 10): Promise<any[]> {
+  const tools: any[] = []
+  
+  for (const source of rssSources) {
+    try {
+      console.log(`📡 正在抓取: ${source.name}`)
+      
+      const feed = await rssParser.parseURL(source.url)
+      const thirtyDaysAgo = new Date(Date.now() - DAYS_LIMIT * 24 * 60 * 60 * 1000)
+      
+      for (const item of feed.items?.slice(0, itemLimit) || []) {
+        const pubDate = item.pubDate ? new Date(item.pubDate) : new Date()
+        if (pubDate < thirtyDaysAgo) continue
+        
+        const title = item.title || ''
+        const content = item.content || item['content:encoded'] || item.summary || ''
+        const link = item.link || ''
+        
+        const aiKeywords = ['AI', '人工智能', '大模型', 'LLM', 'ChatGPT', '发布', '新品', '推出', '上线']
+        const isAITool = aiKeywords.some(kw => title.includes(kw) || content.includes(kw))
+        
+        if (isAITool) {
+          tools.push({
+            name: title.split('：')[0].split('|')[0].slice(0, 50),
+            description: content.replace(/<[^>]*>/g, '').slice(0, 200),
+            websiteUrl: link,
+            githubUrl: extractGitHubUrl(content) || '',
+            stars: 0,
+            publishedAt: pubDate.toISOString(),
+            source: source.name,
+            sourceUrl: link,
+            tags: extractTags(title + ' ' + content),
+            isOpenSource: !!extractGitHubUrl(content)
+          })
+        }
+      }
+      
+      console.log(`✅ ${source.name}: 获取 ${tools.length} 条`)
+    } catch (error) {
+      console.error(`❌ ${source.name} 抓取失败:`, error)
+    }
+  }
+  
+  return tools
+}
+
+function extractGitHubUrl(text: string): string | null {
+  const match = text.match(/https:\/\/github\.com\/[\w-]+\/[\w-]+/)
+  return match ? match[0] : null
+}
+
+function extractTags(text: string): string {
+  const tagMap: Record<string, string> = {
+    '图像': '图像生成', '绘画': '图像生成', '视频': '视频生成',
+    '音频': '音频处理', '音乐': '音频处理', '写作': '写作助手',
+    '代码': '代码助手', '编程': '代码助手', '搜索': '搜索引擎',
+    '翻译': '翻译工具', '聊天': '聊天对话', '对话': '聊天对话',
+    '设计': '设计工具', '办公': '办公效率', '教育': '教育学习',
+    '医疗': '健康医疗', '金融': '金融理财',
+    'image': '图像生成', 'video': '视频生成', 'audio': '音频处理',
+    'code': '代码助手', 'search': '搜索引擎', 'chat': '聊天对话',
+    'chatbot': '聊天对话', 'design': '设计工具', 'productivity': '办公效率',
+  }
+  
+  const lowerText = text.toLowerCase()
+  const tags: string[] = []
+  
+  for (const [keyword, tag] of Object.entries(tagMap)) {
+    if (lowerText.includes(keyword.toLowerCase()) && !tags.includes(tag)) {
+      tags.push(tag)
+    }
+  }
+  
+  return tags.slice(0, 3).join(',') || 'AI工具'
+}
+
+function generateSlug(name: string): string {
+  return name.toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-').slice(0, 50)
+}
+
+// Clean text to prevent SQLite hex escape / unicode errors
+function cleanText(text: string | undefined | null): string {
+  if (!text) return ''
+  let result = text
+  // Remove literal \uXXXX sequences that are incomplete or invalid (like \ud83e without closing)
+  result = result.replace(/\\u[0-9a-fA-F]{0,3}(?![0-9a-fA-F])/g, '')
+  // Remove literal \xXX sequences that are incomplete
+  result = result.replace(/\\x[0-9a-fA-F]?(?![0-9a-fA-F])/g, '')
+  // Remove control characters
+  result = result.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
+  // Remove lone surrogate characters
+  result = result.replace(/[\uD800-\uDFFF]/g, '')
+  return result.slice(0, 500)
+}
+
+async function saveTools(tools: any[]) {
+  let saved = 0
+  let skipped = 0
+  
+  const tagToCategory: Record<string, string> = {
+    '聊天对话': '聊天对话', 'chatbot': '聊天对话', 'chat': '聊天对话',
+    '图像生成': '图像生成', 'image': '图像生成', '绘画': '图像生成',
+    '视频生成': '视频生成', 'video': '视频生成',
+    '音频处理': '音频处理', 'audio': '音频处理', 'music': '音频处理',
+    '写作助手': '写作助手', 'writing': '写作助手',
+    '代码助手': '代码助手', 'code': '代码助手', 'coding': '代码助手',
+    '搜索引擎': '搜索引擎', 'search': '搜索引擎',
+    '翻译工具': '翻译工具', 'translation': '翻译工具',
+    '设计工具': '设计工具', 'design': '设计工具',
+    '办公效率': '办公效率', 'productivity': '办公效率',
+    '知识管理': '知识管理', 'knowledge': '知识管理',
+    '数据分析': '数据分析', 'data': '数据分析',
+    '教育学习': '教育学习', 'education': '教育学习',
+    '健康医疗': '健康医疗', 'health': '健康医疗',
+    '金融理财': '金融理财', 'finance': '金融理财',
+    'AI代理': 'AI代理', 'ai-agent': 'AI代理', 'agent': 'AI代理',
+    '知识库': '知识库', 'rag': '知识库',
+    '向量搜索': '向量搜索', 'embedding': '向量搜索',
+  }
+  
+  for (const tool of tools) {
+    try {
+      const slug = generateSlug(tool.name)
+      
+      const existing = await prisma.tool.findFirst({
+        where: {
+          OR: [{ slug }, { websiteUrl: tool.websiteUrl }, { githubUrl: tool.githubUrl }]
+        }
+      })
+      
+      if (existing) {
+        await prisma.tool.update({
+          where: { id: existing.id },
+          data: { publishedAt: tool.publishedAt ? new Date(tool.publishedAt) : undefined }
+        })
+        skipped++
+        continue
+      }
+      
+      let categoryId = null
+      if (tool.tags) {
+        const tagList = tool.tags.split(',')
+        for (const tag of tagList) {
+          const normalizedTag = tag.trim().toLowerCase()
+          const categoryName = tagToCategory[normalizedTag] || tagToCategory[tag.trim()]
+          if (categoryName) {
+            const category = await prisma.category.findFirst({ where: { name: categoryName } })
+            if (category) { categoryId = category.id; break }
+          }
+        }
+        if (!categoryId) {
+          const otherCategory = await prisma.category.findFirst({ where: { name: '其他工具' } })
+          if (otherCategory) categoryId = otherCategory.id
+        }
+      }
+      
+      await prisma.tool.create({
+        data: {
+          name: cleanText(tool.name),
+          slug,
+          description: cleanText(tool.description),
+          shortDesc: cleanText(tool.description).slice(0, 100),
+          websiteUrl: tool.websiteUrl || '',
+          githubUrl: tool.githubUrl || '',
+          stars: tool.stars || 0, upvotes: 0,
+          isOpenSource: tool.isOpenSource,
+          tags: cleanText(tool.tags), source: cleanText(tool.source),
+          sourceUrl: cleanText(tool.sourceUrl),
+          publishedAt: tool.publishedAt ? new Date(tool.publishedAt) : new Date(),
+          categoryId, status: 'approved', isActive: true
+        }
+      })
+      saved++
+      console.log(`✅ 已保存: ${tool.name}`)
+    } catch (error) {
+      console.error(`❌ 保存失败 ${tool.name}:`, (error as Error).message)
+      console.error('   name:', JSON.stringify(tool.name))
+      console.error('   desc:', JSON.stringify(tool.description?.slice(0, 100)))
+    }
+  }
+  
+  return { saved, skipped }
+}
+
+async function main() {
+  console.log('🚀 开始抓取最新 AI 工具...')
+  console.log(`📅 抓取时间范围: 最近 ${DAYS_LIMIT} 天\n`)
+  
+  // 从 GitHub 获取（用子进程运行独立脚本，避免 prisma 导入干扰 GitHub API）
+  let githubTools: any[] = []
+  try {
+    console.log('📦 启动 GitHub 搜索子进程...')
+    const result = execSync('npx tsx src/scripts/github-search.ts', {
+      cwd: process.cwd(),
+      encoding: 'utf-8',
+      timeout: 120000,
+      env: { ...process.env },
+    })
+    // 从 stdout 提取 JSON 结果
+    const jsonMatch = result.match(/__GITHUB_RESULTS__=([\s\S]+?)=__END__/)
+    if (jsonMatch) {
+      githubTools = JSON.parse(jsonMatch[1])
+    }
+  } catch (err) {
+    console.error('❌ GitHub 搜索子进程失败:', err instanceof Error ? err.message : err)
+  }
+  
+  // 从 RSS 获取
+  const rssLimit = githubTools.length === 0 ? 20 : 10
+  const rssTools = await fetchFromRSS(rssLimit)
+  
+  // 合并去重（GitHub 优先）
+  const allTools = [...githubTools, ...rssTools]
+  const uniqueTools = allTools.filter((tool, index, self) => 
+    index === self.findIndex(t => t.name === tool.name || t.websiteUrl === tool.websiteUrl)
+  )
+  
+  console.log(`\n📊 共获取 ${uniqueTools.length} 个唯一工具`)
+  
+  const { saved, skipped } = await saveTools(uniqueTools)
+  console.log(`\n✨ 完成! 新增: ${saved}, 更新: ${skipped}`)
+  
+  await prisma.$disconnect()
+}
+
+main().catch(console.error)

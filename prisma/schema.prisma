@@ -1,0 +1,393 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Category {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  icon        String?
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  tools       Tool[]
+
+  @@map("categories")
+}
+
+model Tool {
+  id              Int                @id @default(autoincrement())
+  name            String
+  slug            String             @unique
+  description     String?
+  shortDesc       String?
+  websiteUrl      String?
+  githubUrl       String?
+  logoUrl         String?
+  categoryId      Int?
+  pricingType     String             @default("FREE")
+  isOpenSource    Boolean            @default(false)
+  tags            String?
+  features        String?
+  source          String?
+  sourceUrl       String?
+  stars           Int                @default(0)
+  upvotes         Int                @default(0)
+  viewCount       Int                @default(0)
+  isFeatured      Boolean            @default(false)
+  isActive        Boolean            @default(true)
+  status          String             @default("pending")
+  reviewedAt      DateTime?
+  reviewNote      String?
+  suspendedAt     DateTime?
+  suspendedReason String?
+  suspendedBy     Int?
+  publishedAt     DateTime?
+  submittedBy     Int?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  comments        Comment[]
+  shares          Share[]
+  trendHistories  ToolTrendHistory[]
+  category        Category?          @relation(fields: [categoryId], references: [id])
+
+  @@map("tools")
+}
+
+model News {
+  id            Int       @id @default(autoincrement())
+  title         String
+  titleZh       String?   // 中文翻译标题（英文内容用）
+  slug          String    @unique
+  content       String?
+  summary       String?
+  summaryZh     String?   // 中文翻译摘要（英文内容用）
+  sourceUrl     String?
+  sourceName    String?
+  imageUrl      String?
+  author        String?
+  publishedAt   DateTime?
+  isAutoCrawled Boolean   @default(false)
+  viewCount     Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  comments      Comment[]
+
+  @@map("news")
+}
+
+model User {
+  id            Int            @id @default(autoincrement())
+  username      String         @unique
+  email         String         @unique
+  emailVerified DateTime?     // 邮箱验证时间
+  password      String
+  avatarUrl     String?
+  bio           String?
+  location      String?
+  website       String?
+  role          String         @default("USER")
+  status        String         @default("active")
+  bannedAt      DateTime?
+  bannedUntil   DateTime?
+  bannedReason  String?
+  bannedBy      Int?
+  notifyEmail   Boolean        @default(true)
+  notifySite    Boolean        @default(true)
+  notifyComment Boolean        @default(true)
+  notifyLike    Boolean        @default(false)
+  notifyFollow  Boolean        @default(false)
+  profilePublic Boolean        @default(true)
+  showEmail     Boolean        @default(false)
+  showLocation  Boolean        @default(true)
+  showWebsite   Boolean        @default(true)
+  allowComment  Boolean        @default(true)
+  showStats     Boolean        @default(false)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  comments      Comment[]
+  shareComments ShareComment[]
+  shares        Share[]
+  userPets      UserPet[]
+
+  @@map("users")
+}
+
+model Comment {
+  id              Int       @id @default(autoincrement())
+  content         String
+  userId          Int
+  targetType      String
+  toolId          Int?
+  newsId          Int?
+  parentId        Int?
+  upvotes         Int       @default(0)
+  isActive        Boolean   @default(true)
+  status          String    @default("approved")
+  suspendedAt     DateTime?
+  suspendedReason String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  parent          Comment?  @relation("CommentReplies", fields: [parentId], references: [id])
+  replies         Comment[] @relation("CommentReplies")
+  news            News?     @relation(fields: [newsId], references: [id])
+  tool            Tool?     @relation(fields: [toolId], references: [id])
+  user            User      @relation(fields: [userId], references: [id])
+
+  @@map("comments")
+}
+
+model Share {
+  id                 Int            @id @default(autoincrement())
+  type               String         @default("tool")
+  content            String
+  images             String?
+  video              String?
+  toolId             Int?
+  userId             Int
+  likes              Int            @default(0)
+  viewCount          Int            @default(0)
+  status             String         @default("pending")
+  reviewedAt         DateTime?
+  reviewNote         String?
+  suspendedAt        DateTime?
+  suspendedReason    String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  submitToolName     String?
+  submitToolWebsite  String?
+  submitToolDesc     String?
+  submitToolCategory String?
+  submitToolPricing  String?
+  submitToolGithub   String?
+  submitToolLogo     String?
+  comments           ShareComment[]
+  user               User           @relation(fields: [userId], references: [id])
+  tool               Tool?          @relation(fields: [toolId], references: [id])
+
+  @@map("shares")
+}
+
+model ShareComment {
+  id              Int            @id @default(autoincrement())
+  content         String
+  userId          Int
+  shareId         Int
+  parentId        Int?
+  likes           Int            @default(0)
+  status          String         @default("approved")
+  suspendedAt     DateTime?
+  suspendedReason String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  parent          ShareComment?  @relation("ShareCommentReplies", fields: [parentId], references: [id])
+  replies         ShareComment[] @relation("ShareCommentReplies")
+  share           Share          @relation(fields: [shareId], references: [id])
+  user            User           @relation(fields: [userId], references: [id])
+
+  @@map("share_comments")
+}
+
+model Report {
+  id          Int       @id @default(autoincrement())
+  type        String
+  targetId    Int
+  reason      String
+  description String?
+  reporterId  Int?
+  status      String    @default("pending")
+  resolvedAt  DateTime?
+  resolvedBy  Int?
+  resolution  String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("reports")
+}
+
+model UserDailyLimit {
+  id           Int      @id @default(autoincrement())
+  userId       Int
+  date         String
+  commentCount Int      @default(0)
+  likeCount    Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, date])
+  @@map("user_daily_limits")
+}
+
+model ViewRecord {
+  id         Int      @id @default(autoincrement())
+  userId     Int?
+  ipAddress  String?
+  targetType String
+  targetId   Int
+  viewedAt   DateTime @default(now())
+
+  @@unique([userId, ipAddress, targetType, targetId, viewedAt])
+  @@map("view_records")
+}
+
+model Pet {
+  id           String    @id @default(cuid())
+  name         String
+  element      String
+  rarity       String    @default("C")
+  icon         String
+  color        String
+  description  String
+  stageBaby    String    @default("{}")
+  stageYouth   String    @default("{}")
+  stageAdult   String    @default("{}")
+  elementTrait String    @default("{}")
+  unlockTask   String?
+  taskType     String?
+  taskCount    Int?
+  sortOrder    Int       @default(0)
+  createdAt    DateTime  @default(now())
+  userPets     UserPet[]
+
+  @@map("pets")
+}
+
+model UserPet {
+  id             String   @id @default(cuid())
+  userId         Int
+  petId          String
+  obtainedAt     DateTime @default(now())
+  isEquipped     Boolean  @default(false)
+  intimacy       Int      @default(0)
+  mood           String   @default("happy")
+  hunger         Int      @default(80)
+  energy         Int      @default(100)
+  level          Int      @default(1)
+  exp            Int      @default(0)
+  chatCount      Int      @default(0)
+  feedCount      Int      @default(0)
+  playCount      Int      @default(0)
+  petCount       Int      @default(0)
+  lastInteractAt DateTime @default(now())
+  nickname       String?
+  isFavorite     Boolean  @default(false)
+  pet            Pet      @relation(fields: [petId], references: [id])
+  user           User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, petId])
+  @@map("user_pets")
+}
+
+model PetTaskProgress {
+  id        String   @id @default(cuid())
+  userId    Int
+  taskType  String
+  count     Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, taskType])
+  @@map("pet_task_progress")
+}
+
+model UserVisitStreak {
+  id            Int      @id @default(autoincrement())
+  userId        Int      @unique
+  lastVisitDate DateTime @default(now())
+  streakDays    Int      @default(1)
+  updatedAt     DateTime @updatedAt
+
+  @@map("user_visit_streaks")
+}
+
+model AIInteraction {
+  id         Int      @id @default(autoincrement())
+  targetType String
+  targetId   Int
+  action     String
+  content    String?
+  aiUserId   Int
+  createdAt  DateTime @default(now())
+
+  @@unique([targetType, targetId, action])
+  @@map("ai_interactions")
+}
+
+model Follow {
+  id         Int      @id @default(autoincrement())
+  followerId Int
+  followingId Int
+  createdAt  DateTime @default(now())
+
+  @@unique([followerId, followingId])
+  @@map("follows")
+}
+
+model SystemConfig {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("system_configs")
+}
+
+model ToolTrendHistory {
+  id        Int      @id @default(autoincrement())
+  toolId    Int
+  date      String
+  upvotes   Int      @default(0)
+  viewCount Int      @default(0)
+  stars     Int      @default(0)
+  rank      Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tool      Tool     @relation(fields: [toolId], references: [id])
+
+  @@unique([toolId, date])
+  @@map("tool_trend_histories")
+}
+
+model Subscriber {
+  id         Int       @id @default(autoincrement())
+  email      String    @unique
+  status     String    @default("active")
+  source     String    @default("newsletter")
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@map("subscribers")
+}
+
+// 验证码发送日志
+model VerificationLog {
+  id          Int       @id @default(autoincrement())
+  email       String    // 接收验证码的邮箱
+  ipAddress   String?   // 请求IP
+  userAgent   String?   // 用户代理
+  sentAt      DateTime  @default(now()) // 发送时间
+  success     Boolean   @default(false) // 是否实际发送成功（非频率拦截）
+  reason      String?   // 拦截原因/备注
+
+  @@index([email, sentAt])
+  @@index([ipAddress])
+  @@map("verification_logs")
+}
+
+// 邮箱验证码（数据库存储，避免内存 Map 在热重载/多实例时丢失）
+model VerificationCode {
+  id        Int      @id @default(autoincrement())
+  email     String   // 邮箱
+  code      String   // 6位验证码
+  expiresAt DateTime // 过期时间
+  used      Boolean  @default(false) // 是否已使用
+  createdAt DateTime @default(now())
+
+  @@index([email, code])
+  @@map("verification_codes")
+}

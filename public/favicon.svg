@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Dark background -->
+  <rect width="64" height="64" rx="14" fill="#0a0a0f"/>
+  <rect width="62" height="62" rx="12" x="1" y="1" fill="none" stroke="#00ff8822" stroke-width="1.5"/>
+  
+  <!-- BrainCircuit icon - exact replica of lucide BrainCircuit, scaled to 48x48 centered -->
+  <g transform="translate(8,8) scale(2)" stroke="#00ff88" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <!-- Main brain shape -->
+    <path d="M12 4.5a2.5 2.5 0 0 0-4.96-.46 2.5 2.5 0 0 0-1.98 3 2.5 2.5 0 0 0-1.32 4.24 3 3 0 0 0 .34 5.58 2.5 2.5 0 0 0 2.96 3.08 2.5 2.5 0 0 0 4.91.05L12 20V4.5Z"/>
+    
+    <!-- Right side circuit lines -->
+    <path d="M16 8V5c0-1.1.9-2 2-2"/>
+    <path d="M12 13h4"/>
+    <path d="M12 18h6a2 2 0 0 1 2 2v1"/>
+    <path d="M12 8h8"/>
+    
+    <!-- Circuit nodes (small circles) -->
+    <circle cx="20.5" cy="8" r="0.5" fill="#00ff88" stroke="none"/>
+    <circle cx="16.5" cy="13" r="0.5" fill="#00ff88" stroke="none"/>
+    <circle cx="20.5" cy="21" r="0.5" fill="#00ff88" stroke="none"/>
+    <circle cx="18.5" cy="3" r="0.5" fill="#00ff88" stroke="none"/>
+  </g>
+</svg>

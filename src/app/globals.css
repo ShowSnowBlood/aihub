@@ -1,0 +1,474 @@
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&family=Share+Tech+Mono&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Cyberpunk Design Tokens - Dark Mode (Default) */
+    --cyber-background: #0a0a0f;
+    --cyber-foreground: #e0e0e0;
+    --cyber-card: #12121a;
+    --cyber-muted: #1c1c2e;
+    --cyber-muted-foreground: #6b7280;
+    --cyber-border: #2a2a3a;
+    --cyber-input: #12121a;
+    --cyber-ring: #00ff88;
+    --cyber-destructive: #ff3366;
+    
+    /* Neon Colors */
+    --neon-green: #00ff88;
+    --neon-magenta: #ff00ff;
+    --neon-cyan: #00d4ff;
+    --neon-red: #ff3366;
+    
+    /* Glow Shadows */
+    --shadow-neon: 0 0 5px #00ff88, 0 0 10px #00ff8840;
+    --shadow-neon-sm: 0 0 3px #00ff88, 0 0 6px #00ff8830;
+    --shadow-neon-lg: 0 0 10px #00ff88, 0 0 20px #00ff8860, 0 0 40px #00ff8830;
+    --shadow-neon-secondary: 0 0 5px #ff00ff, 0 0 20px #ff00ff60;
+    --shadow-neon-tertiary: 0 0 5px #00d4ff, 0 0 20px #00d4ff60;
+  }
+  
+  * {
+    @apply border-cyber-border;
+  }
+  
+  /* Prevent white flash on page load */
+  html {
+    background-color: #0a0a0f;
+  }
+  
+  body {
+    @apply antialiased text-cyber-foreground font-mono;
+    background-color: #0a0a0f;
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+  
+  /* Light Mode Variables - Darker & Softer */
+  html.light-mode {
+    --cyber-background: #1a1d29;
+    --cyber-foreground: #e4e6eb;
+    --cyber-card: #242838;
+    --cyber-muted: #2d3142;
+    --cyber-muted-foreground: #8b92a8;
+    --cyber-border: #3d4252;
+    --cyber-input: #242838;
+    --cyber-ring: #00d4aa;
+    --cyber-destructive: #ff5a6a;
+    
+    /* Neon Colors for Dark-Soft Mode */
+    --neon-green: #00d4aa;
+    --neon-magenta: #ff6b9d;
+    --neon-cyan: #4facfe;
+    --neon-red: #ff5a6a;
+    
+    /* Glow Shadows for Dark-Soft */
+    --shadow-neon: 0 0 5px #00d4aa, 0 0 10px #00d4aa40;
+    --shadow-neon-sm: 0 0 3px #00d4aa, 0 0 6px #00d4aa30;
+    --shadow-neon-lg: 0 0 10px #00d4aa, 0 0 20px #00d4aa60, 0 0 40px #00d4aa30;
+    --shadow-neon-secondary: 0 0 5px #ff6b9d, 0 0 20px #ff6b9d60;
+    --shadow-neon-tertiary: 0 0 5px #4facfe, 0 0 20px #4facfe60;
+  }
+  
+  /* Smooth theme transition */
+  html.light-mode body {
+    background-color: var(--cyber-background);
+  }
+  
+  /* Show/hide elements based on theme */
+  .dark-only {
+    display: block;
+  }
+  
+  .light-only {
+    display: none;
+  }
+  
+  html.light-mode .dark-only {
+    display: none;
+  }
+  
+  html.light-mode .light-only {
+    display: block;
+  }
+  
+  /* Scrollbar Styling */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    background: var(--cyber-background);
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    background: var(--cyber-border);
+    border-radius: 4px;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--neon-green);
+    box-shadow: var(--shadow-neon);
+  }
+  
+  /* Light mode scrollbar adjustments */
+  html.light-mode ::-webkit-scrollbar-thumb {
+    background: #adb5bd;
+  }
+  
+  html.light-mode ::-webkit-scrollbar-thumb:hover {
+    background: var(--neon-green);
+  }
+}
+
+@layer components {
+  /* Cyberpunk Button Variants */
+  .btn-cyber {
+    @apply relative px-6 py-3 font-mono text-sm font-semibold uppercase tracking-wider 
+           border-2 border-neon-green text-neon-green bg-transparent
+           transition-all duration-200
+           hover:bg-neon-green hover:text-cyber-background hover:shadow-neon;
+  }
+
+  /* 霓虹发光按钮 - 圆角矩形版 */
+  .btn-cyber-glow {
+    @apply relative px-6 py-3 font-mono text-sm font-semibold uppercase tracking-wider 
+           border border-neon-green text-neon-green bg-neon-green/10
+           transition-all duration-200 rounded-md
+           hover:bg-neon-green hover:text-cyber-background
+           shadow-[0_0_6px_rgba(0,255,136,0.4)] 
+           hover:shadow-[0_0_12px_rgba(0,255,136,0.6)];
+  }
+
+  /* 霓虹发光按钮 - 洋红版 */
+  .btn-cyber-glow-magenta {
+    @apply relative px-6 py-3 font-mono text-sm font-semibold uppercase tracking-wider 
+           border border-neon-magenta text-neon-magenta bg-neon-magenta/10
+           transition-all duration-200 rounded-md
+           hover:bg-neon-magenta hover:text-cyber-background
+           shadow-[0_0_6px_rgba(255,0,255,0.4)] 
+           hover:shadow-[0_0_12px_rgba(255,0,255,0.6)];
+  }
+
+  /* 霓虹轮廓按钮 - 圆角矩形版（青色） */
+  .btn-cyber-outline-neon {
+    @apply relative px-6 py-3 font-mono text-sm font-semibold uppercase tracking-wider 
+           border border-neon-cyan text-neon-cyan bg-transparent
+           transition-all duration-200 rounded-md
+           hover:bg-neon-cyan/10
+           hover:shadow-[0_0_8px_rgba(0,212,255,0.4)];
+  }
+
+  /* 按钮四角装饰（使用伪元素） */
+  .btn-cyber::before,
+  .btn-cyber::after {
+    content: '';
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    border-color: #00ff88;
+    border-style: solid;
+    border-width: 0;
+    transition: all 0.2s;
+  }
+  .btn-cyber::before {
+    top: -1px;
+    left: -1px;
+    border-top-width: 2px;
+    border-left-width: 2px;
+  }
+  .btn-cyber::after {
+    bottom: -1px;
+    right: -1px;
+    border-bottom-width: 2px;
+    border-right-width: 2px;
+  }
+  .btn-cyber:hover::before,
+  .btn-cyber:hover::after {
+    width: 12px;
+    height: 12px;
+  }
+
+  .btn-cyber-secondary {
+    @apply relative px-6 py-3 font-mono text-sm font-semibold uppercase tracking-wider 
+           border-2 border-neon-magenta text-neon-magenta bg-transparent
+           transition-all duration-200
+           hover:bg-neon-magenta hover:text-cyber-background hover:shadow-neon-secondary;
+  }
+  
+  .btn-cyber-outline {
+    @apply relative px-6 py-3 font-mono text-sm font-semibold uppercase tracking-wider 
+           border border-cyber-border text-cyber-foreground bg-transparent
+           transition-all duration-200
+           hover:border-neon-green hover:text-neon-green hover:shadow-neon;
+  }
+  .btn-cyber-outline::before,
+  .btn-cyber-outline::after {
+    content: '';
+    position: absolute;
+    width: 7px;
+    height: 7px;
+    border-color: #2a2a3a;
+    border-style: solid;
+    border-width: 0;
+    transition: all 0.2s;
+  }
+  .btn-cyber-outline::before {
+    top: -1px;
+    left: -1px;
+    border-top-width: 2px;
+    border-left-width: 2px;
+  }
+  .btn-cyber-outline::after {
+    bottom: -1px;
+    right: -1px;
+    border-bottom-width: 2px;
+    border-right-width: 2px;
+  }
+  .btn-cyber-outline:hover::before,
+  .btn-cyber-outline:hover::after {
+    border-color: #00ff88;
+  }
+  
+  .btn-cyber-ghost {
+    @apply relative px-6 py-3 font-mono text-sm font-semibold uppercase tracking-wider 
+           text-cyber-foreground bg-transparent
+           transition-all duration-200
+           hover:bg-neon-green/10 hover:text-neon-green;
+  }
+  
+  .btn-cyber-glitch {
+    @apply relative px-6 py-3 font-mono text-sm font-semibold uppercase tracking-wider 
+           bg-neon-green text-cyber-background
+           transition-all duration-200
+           hover:brightness-110;
+  }
+  
+  /* Cyberpunk Card Variants */
+  .card-cyber {
+    @apply relative bg-cyber-card border border-cyber-border
+           transition-all duration-300
+           hover:-translate-y-1 hover:border-neon-green hover:shadow-neon;
+  }
+  
+  .card-cyber-terminal {
+    @apply relative bg-cyber-background border border-cyber-border
+           overflow-hidden;
+  }
+  
+  .card-cyber-terminal::before {
+    content: '';
+    @apply absolute top-0 left-0 right-0 h-8 bg-cyber-muted border-b border-cyber-border;
+  }
+  
+  .card-cyber-holographic {
+    @apply relative bg-cyber-muted/30 border border-neon-green/30
+           backdrop-blur-sm shadow-neon;
+  }
+  
+  /* Cyberpunk Input */
+  .input-cyber {
+    @apply relative w-full bg-cyber-input border border-cyber-border 
+           text-neon-green font-mono text-sm
+           px-4 py-3 pl-10
+           placeholder:text-cyber-muted-foreground
+           focus:border-neon-green focus:shadow-neon focus:outline-none
+           transition-all duration-200;
+  }
+  
+  .input-cyber-prefix::before {
+    content: '>';
+    @apply absolute left-3 top-1/2 -translate-y-1/2 text-neon-green font-mono;
+  }
+  
+  /* Glitch Text Effect */
+  .glitch-text {
+    @apply relative inline-block;
+  }
+  
+  .glitch-text::before,
+  .glitch-text::after {
+    content: attr(data-text);
+    @apply absolute top-0 left-0 w-full h-full;
+  }
+  
+  .glitch-text::before {
+    @apply text-neon-magenta;
+    animation: glitch-1 0.3s infinite linear alternate-reverse;
+    clip-path: polygon(0 0, 100% 0, 100% 35%, 0 35%);
+  }
+  
+  .glitch-text::after {
+    @apply text-neon-cyan;
+    animation: glitch-2 0.3s infinite linear alternate-reverse;
+    clip-path: polygon(0 65%, 100% 65%, 100% 100%, 0 100%);
+  }
+  
+  /* Scanline Overlay */
+  .scanlines {
+    @apply pointer-events-none fixed inset-0 z-50;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 0, 0, 0.3) 2px,
+      rgba(0, 0, 0, 0.3) 4px
+    );
+  }
+  
+  /* Grid Background Pattern */
+  .grid-pattern {
+    background-image:
+      linear-gradient(rgba(0, 255, 136, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 255, 136, 0.03) 1px, transparent 1px);
+    background-size: 50px 50px;
+  }
+  
+  /* Circuit Pattern Background */
+  .circuit-pattern {
+    background-image: url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M10 10h30v30h-30z' fill='none' stroke='rgba(0,255,136,0.05)' stroke-width='1'/%3E%3Cpath d='M50 10h40v10h-40z' fill='none' stroke='rgba(0,255,136,0.05)' stroke-width='1'/%3E%3Cpath d='M10 50h10v40h-10z' fill='none' stroke='rgba(0,255,136,0.05)' stroke-width='1'/%3E%3Ccircle cx='25' cy='25' r='2' fill='rgba(0,255,136,0.1)'/%3E%3Ccircle cx='55' cy='15' r='2' fill='rgba(0,255,136,0.1)'/%3E%3Ccircle cx='15' cy='55' r='2' fill='rgba(0,255,136,0.1)'/%3E%3C/svg%3E");
+  }
+  
+  /* Neon Glow Utilities */
+  .glow-green {
+    box-shadow: 0 0 5px #00ff88, 0 0 10px #00ff8840;
+  }
+  
+  .glow-magenta {
+    box-shadow: 0 0 5px #ff00ff, 0 0 20px #ff00ff60;
+  }
+  
+  .glow-cyan {
+    box-shadow: 0 0 5px #00d4ff, 0 0 20px #00d4ff60;
+  }
+  
+  /* Terminal Text Style */
+  .terminal-text {
+    @apply font-mono text-sm;
+  }
+  
+  .terminal-text::before {
+    content: '>';
+    @apply text-neon-green mr-2;
+  }
+  
+  /* Status Indicators */
+  .status-dot {
+    @apply w-2 h-2 rounded-full;
+  }
+  
+  .status-dot-online {
+    @apply bg-neon-green glow-green;
+  }
+  
+  .status-dot-busy {
+    @apply bg-neon-magenta glow-magenta;
+  }
+  
+  .status-dot-offline {
+    @apply bg-cyber-muted-foreground;
+  }
+  
+  /* Corner Accents for Holographic Cards */
+  .corner-accent {
+    @apply absolute w-4 h-4 border-2;
+  }
+  
+  .corner-accent-tl {
+    @apply corner-accent top-0 left-0 border-r-0 border-b-0 border-neon-green;
+  }
+  
+  .corner-accent-tr {
+    @apply corner-accent top-0 right-0 border-l-0 border-b-0 border-neon-green;
+  }
+  
+  .corner-accent-bl {
+    @apply corner-accent bottom-0 left-0 border-r-0 border-t-0 border-neon-green;
+  }
+  
+  .corner-accent-br {
+    @apply corner-accent bottom-0 right-0 border-l-0 border-t-0 border-neon-green;
+  }
+}
+
+@layer utilities {
+  /* Animation Keyframes */
+  @keyframes glitch-1 {
+    0% { transform: translate(0); }
+    20% { transform: translate(-2px, 2px); }
+    40% { transform: translate(2px, -2px); }
+    60% { transform: translate(-1px, -1px); }
+    80% { transform: translate(1px, 1px); }
+    100% { transform: translate(0); }
+  }
+  
+  @keyframes glitch-2 {
+    0% { transform: translate(0); }
+    20% { transform: translate(2px, -2px); }
+    40% { transform: translate(-2px, 2px); }
+    60% { transform: translate(1px, 1px); }
+    80% { transform: translate(-1px, -1px); }
+    100% { transform: translate(0); }
+  }
+  
+  /* Scanline animation for buttons */
+  @keyframes scanline {
+    0% { transform: translateY(-100%); }
+    100% { transform: translateY(100%); }
+  }
+  
+  .animate-scanline {
+    animation: scanline 2s linear infinite;
+  }
+  
+  /* Glitch line animation */
+  @keyframes glitch-line {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+  }
+  
+  .animate-glitch-line {
+    animation: glitch-line 0.5s ease-out;
+  }
+  
+  /* Text Gradient */
+  .text-gradient-neon {
+    @apply bg-gradient-to-r from-neon-green via-neon-cyan to-neon-magenta bg-clip-text text-transparent;
+  }
+  
+  /* Border Gradient */
+  .border-gradient-neon {
+    border-image: linear-gradient(135deg, #00ff88, #00d4ff, #ff00ff) 1;
+  }
+  
+  /* Backdrop blur for glass effect */
+  .glass {
+    @apply backdrop-blur-md bg-cyber-card/50;
+  }
+}
+
+/* Selection Color */
+::selection {
+  background: rgba(0, 255, 136, 0.3);
+  color: #e0e0e0;
+}
+
+/* Focus Visible Styles */
+:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px #0a0a0f, 0 0 0 4px #00ff88;
+}
+
+/* Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

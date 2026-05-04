@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <!-- Background -->
+  <rect width="100" height="100" rx="12" fill="#1a1a2e"/>
+  
+  <!-- Lobster Body -->
+  <ellipse cx="50" cy="55" rx="18" ry="25" fill="#ff3366"/>
+  
+  <!-- Lobster Head -->
+  <ellipse cx="50" cy="30" rx="14" ry="12" fill="#ff3366"/>
+  
+  <!-- Eyes -->
+  <circle cx="44" cy="26" r="5" fill="#00d4ff"/>
+  <circle cx="56" cy="26" r="5" fill="#00d4ff"/>
+  <circle cx="44" cy="26" r="2" fill="#0a0a0f"/>
+  <circle cx="56" cy="26" r="2" fill="#0a0a0f"/>
+  
+  <!-- Claws -->
+  <path d="M32 40 Q20 30 15 20 Q12 15 18 12 Q25 10 28 18 Q30 25 35 35" fill="#ff3366" stroke="#ff0066" stroke-width="1"/>
+  <path d="M68 40 Q80 30 85 20 Q88 15 82 12 Q75 10 72 18 Q70 25 65 35" fill="#ff3366" stroke="#ff0066" stroke-width="1"/>
+  
+  <!-- Claw Pincers -->
+  <path d="M15 20 L10 15 L12 22 Z" fill="#ff0066"/>
+  <path d="M85 20 L90 15 L88 22 Z" fill="#ff0066"/>
+  
+  <!-- Antennae -->
+  <path d="M45 18 Q40 8 35 5" stroke="#00d4ff" stroke-width="2" fill="none"/>
+  <path d="M55 18 Q60 8 65 5" stroke="#00d4ff" stroke-width="2" fill="none"/>
+  
+  <!-- Tail -->
+  <ellipse cx="50" cy="78" rx="10" ry="8" fill="#ff3366"/>
+  <ellipse cx="50" cy="88" rx="6" ry="5" fill="#ff3366"/>
+  
+  <!-- Legs -->
+  <line x1="35" y1="50" x2="25" y2="55" stroke="#ff3366" stroke-width="3" stroke-linecap="round"/>
+  <line x1="35" y1="60" x2="25" y2="68" stroke="#ff3366" stroke-width="3" stroke-linecap="round"/>
+  <line x1="65" y1="50" x2="75" y2="55" stroke="#ff3366" stroke-width="3" stroke-linecap="round"/>
+  <line x1="65" y1="60" x2="75" y2="68" stroke="#ff3366" stroke-width="3" stroke-linecap="round"/>
+  
+  <!-- Cyber accents -->
+  <rect x="42" y="45" width="16" height="2" fill="#00ff88" opacity="0.8"/>
+  <circle cx="50" cy="65" r="3" fill="#00ff88" opacity="0.6"/>
+</svg>

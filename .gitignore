@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+
+# Environment variables
+.env
+.env.local
+.env.development
+.env.production
+
+# Database
+prisma/dev.db
+prisma/dev.db-journal
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temp / debug files
+tmp-*
+tmp_*
+test-*.txt
+test*-*.txt
+rss-*.txt
+rss-*.js
+rss-*.bat
+run-rss.bat
+node-*.txt
+node-*.err
+
+# Audit / analysis reports
+AUDIT_REPORT_*.md
+full-audit.js
+
+# WorkBuddy / CodeBuddy metadata
+.workbuddy/
+.codebuddy/

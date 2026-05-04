@@ -1,0 +1,42 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/prisma'
+import { canLike, incrementLikeCount } from '@/lib/daily-limit'
+
+// POST /api/shares/[id]/like  点赞/取消点赞
+export async function POST(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const shareId = parseInt(params.id)
+    const body = await request.json()
+    const { action, userId = 1 } = body // 'like' | 'unlike'
+
+    // 点赞时检查次数限制
+    if (action === 'like') {
+      const { allowed, remaining } = await canLike(userId)
+      if (!allowed) {
+        return NextResponse.json({ 
+          error: '今日点赞次数已达上限（15次），请明天再试' 
+        }, { status: 429 })
+      }
+    }
+
+    const share = await prisma.share.update({
+      where: { id: shareId },
+      data: {
+        likes: action === 'like' ? { increment: 1 } : { decrement: 1 }
+      }
+    })
+
+    // 增加用户点赞次数
+    if (action === 'like') {
+      await incrementLikeCount(userId)
+    }
+
+    return NextResponse.json({ likes: share.likes })
+  } catch (error) {
+    console.error('点赞操作失败:', error)
+    return NextResponse.json({ error: '操作失败' }, { status: 500 })
+  }
+}
