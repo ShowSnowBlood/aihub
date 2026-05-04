@@ -45,6 +45,9 @@ node-*.err
 AUDIT_REPORT_*.md
 full-audit.js
 
+# Migration helper scripts
+fix-*.py
+
 # WorkBuddy / CodeBuddy metadata
 .workbuddy/
 .codebuddy/
