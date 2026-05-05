@@ -104,14 +104,14 @@ export default async function ToolsPage({
     
     // 格式化工具数据
     tools = (tools as any[]).map(t => ({
-      id: t.id,
+      id: Number(t.id),
       name: t.name,
       slug: t.slug,
       shortDesc: t.shortDesc,
       logoUrl: t.logoUrl,
-      stars: t.stars,
-      upvotes: t.upvotes,
-      viewCount: t.viewCount,
+      stars: Number(t.stars),
+      upvotes: Number(t.upvotes),
+      viewCount: Number(t.viewCount),
       websiteUrl: t.websiteUrl,
       githubUrl: t.githubUrl,
       pricingType: t.pricingType,
