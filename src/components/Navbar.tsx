@@ -334,11 +334,11 @@ export default function Navbar() {
                     <span className="status-dot status-dot-online" />
                   </Link>
                   {/* 下拉菜单 */}
-                  <div className="absolute right-0 top-full mt-1 w-36 bg-[#12121a] border border-[#2a2a3a] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50"
+                  <div className="absolute right-0 top-full mt-1 min-w-full bg-[#12121a] border border-[#2a2a3a] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50"
                     style={{ clipPath: 'polygon(0 0, calc(100% - 4px) 0, 100% 4px, 100% 100%, 4px 100%, 0 calc(100% - 4px))' }}
                   >
                     <Link href="/user-center" className="block px-4 py-2 text-xs text-[#e0e0e0] font-mono hover:bg-[#1c1c2e] transition-colors">👤 用户中心</Link>
-                    <Link href="/settings" className="block px-4 py-2 text-xs text-[#e0e0e0] font-mono hover:bg-[#1c1c2e] transition-colors">⚙️ 设置</Link>
+                    <Link href="/user-center/edit" className="block px-4 py-2 text-xs text-[#e0e0e0] font-mono hover:bg-[#1c1c2e] transition-colors">⚙️ 设置</Link>
                     <button 
                       onClick={() => { localStorage.removeItem('user'); window.location.href = '/' }}
                       className="block w-full text-left px-4 py-2 text-xs text-[#ff3366] font-mono hover:bg-[#1c1c2e] transition-colors"
