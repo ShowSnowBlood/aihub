@@ -20,9 +20,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '只支持 JPG/PNG/GIF/WebP 格式' }, { status: 400 })
     }
 
-    // 验证文件大小（最大 1MB）
-    if (file.size > 1 * 1024 * 1024) {
-      return NextResponse.json({ error: '头像文件不能超过 1MB' }, { status: 400 })
+    // 验证文件大小（最大 2MB）
+    if (file.size > 2 * 1024 * 1024) {
+      return NextResponse.json({ error: '头像文件不能超过 2MB' }, { status: 400 })
     }
 
     // 读取文件内容 → base64
