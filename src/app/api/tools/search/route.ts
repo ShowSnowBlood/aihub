@@ -3,12 +3,6 @@ import { prisma } from '@/lib/prisma'
 
 export const dynamic = 'force-dynamic'
 
-// BigInt → Number 序列化修复
-function toNum(v: any): number {
-  if (typeof v === 'bigint') return Number(v)
-  return v
-}
-
 // GET /api/tools/search?q=关键词&limit=8
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
@@ -21,66 +15,51 @@ export async function GET(request: NextRequest) {
 
   try {
     const lowerQ = q.toLowerCase()
-    // 分词：按空格分割关键词，支持多关键词搜索
     const keywords = lowerQ.split(/\s+/).filter(k => k.length > 0)
-    
-    // 构建 WHERE 条件：每个关键词都必须在 name/shortDesc/tags 中
-    const conditions = keywords.map(k => `
-      (
-        LOWER(t.name) LIKE '%${k}%'
-        OR LOWER(t.shortDesc) LIKE '%${k}%'
-        OR LOWER(t.tags) LIKE '%${k}%'
-      )
-    `).join(' AND ')
-    
-    // 相关性排序：
-    // 1. 名称完全匹配（或开头匹配）权重最高
-    // 2. 名称包含关键词次之
-    // 3. tags 匹配再次
-    // 4. 描述匹配最低
-    // 5. 最后按热度(viewCount)排序
-    const tools = await prisma.$queryRawUnsafe(`
-      SELECT
-        t.id,
-        t.name,
-        t.slug,
-        t.shortDesc,
-        t.logoUrl,
-        c.name as categoryName,
-        t.viewCount,
-        -- 相关性得分：名称匹配得分最高
-        (
-          CASE WHEN LOWER(t.name) = '${lowerQ}' THEN 100
-               WHEN LOWER(t.name) LIKE '${lowerQ}%' THEN 80
-               WHEN LOWER(t.name) LIKE '%${lowerQ}%' THEN 60
-               ELSE 0
-          END
-          +
-          CASE WHEN LOWER(t.tags) LIKE '%${lowerQ}%' THEN 40 ELSE 0 END
-          +
-          CASE WHEN LOWER(t.shortDesc) LIKE '%${lowerQ}%' THEN 20 ELSE 0 END
-        ) as relevanceScore
-      FROM tools t
-      LEFT JOIN categories c ON t.categoryId = c.id
-      WHERE t.status = 'approved'
-        AND (${conditions})
-      ORDER BY
-        relevanceScore DESC,
-        t.viewCount DESC
-      LIMIT ${limit}
-    `)
 
-    const formatted = (tools as any[]).map(t => ({
-      id: toNum(t.id),
-      name: t.name,
-      slug: t.slug,
-      shortDesc: t.shortDesc,
-      logoUrl: t.logoUrl,
-      categoryName: t.categoryName,
-      viewCount: toNum(t.viewCount)
-    }))
+    // 用 Prisma findMany 替代 raw SQL
+    const allTools = await prisma.tool.findMany({
+      where: { status: 'approved' },
+      include: { category: { select: { name: true } } },
+      take: 100,
+    })
 
-    return NextResponse.json({ tools: formatted })
+    // 内存中筛选和排序
+    const filtered = allTools
+      .filter(t => {
+        const name = (t.name || '').toLowerCase()
+        const desc = (t.shortDesc || '').toLowerCase()
+        const tags = (t.tags || '').toLowerCase()
+        return keywords.every(k =>
+          name.includes(k) || desc.includes(k) || tags.includes(k)
+        )
+      })
+      .map(t => {
+        const name = (t.name || '').toLowerCase()
+        const tags = (t.tags || '').toLowerCase()
+        const desc = (t.shortDesc || '').toLowerCase()
+        let score = 0
+        if (name === lowerQ) score += 100
+        else if (name.startsWith(lowerQ)) score += 80
+        else if (name.includes(lowerQ)) score += 60
+        if (tags.includes(lowerQ)) score += 40
+        if (desc.includes(lowerQ)) score += 20
+        return {
+          id: t.id,
+          name: t.name,
+          slug: t.slug,
+          shortDesc: t.shortDesc,
+          logoUrl: t.logoUrl,
+          categoryName: t.category?.name || null,
+          viewCount: t.viewCount,
+          score,
+        }
+      })
+      .sort((a, b) => b.score - a.score || b.viewCount - a.viewCount)
+      .slice(0, limit)
+      .map(({ score, ...rest }) => rest)
+
+    return NextResponse.json({ tools: filtered })
   } catch (error: any) {
     console.error('工具搜索失败:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
