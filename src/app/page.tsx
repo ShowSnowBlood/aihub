@@ -325,13 +325,13 @@ export default async function HomePage() {
                           boxShadow: '0 0 10px rgba(0, 255, 136, 0.3)'
                         }}
                       >
-                        {(share.tool?.name || share.user?.username || 'U').trim().charAt(0).toUpperCase()}
+                      {(share.tool?.name || share.submitToolName || share.user?.username || 'U').trim().charAt(0).toUpperCase()}
                       </div>
                       <div className="flex-1 min-w-0">
                         <h3 className="font-orbitron font-bold text-cyber-foreground truncate group-hover:text-neon-green transition-colors">
-                          {share.tool?.name || '生活分享'}
+                          {share.tool?.name || share.submitToolName || (share.type === 'life' ? '生活分享' : '工具分享')}
                         </h3>
-                        <p className="text-xs text-cyber-muted-foreground truncate font-mono">{share.tool?.shortDesc || share.tool?.description?.slice(0, 30) || '来自社区的精彩分享'}</p>
+                        <p className="text-xs text-cyber-muted-foreground truncate font-mono">{share.tool?.shortDesc || share.tool?.description?.slice(0, 30) || share.submitToolDesc || (share.type === 'life' ? '来自社区的精彩分享' : '用户提交的AI工具')}</p>
                       </div>
                     </div>
                   </div>
@@ -340,15 +340,26 @@ export default async function HomePage() {
                   <div className="p-4 flex-1 flex flex-col min-h-0">
                     {/* 用户信息 */}
                     <div className="flex items-center gap-2 mb-2 flex-shrink-0">
-                      <div 
-                        className="w-6 h-6 flex items-center justify-center text-cyber-background text-xs font-medium clip-chamfer-sm"
-                        style={{ 
-                          background: `linear-gradient(135deg, #ff00ff 0%, #00d4ff 100%)`,
-                        }}
-                      >
-                        {share.user.username.charAt(0).toUpperCase()}
-                      </div>
+                      {share.user?.avatarUrl ? (
+                        <div className="w-6 h-6 clip-chamfer-sm overflow-hidden flex-shrink-0">
+                          <img src={share.user.avatarUrl} alt="" className="w-full h-full object-cover" />
+                        </div>
+                      ) : (
+                        <div 
+                          className="w-6 h-6 flex items-center justify-center text-cyber-background text-xs font-medium clip-chamfer-sm"
+                          style={{ 
+                            background: `linear-gradient(135deg, #ff00ff 0%, #00d4ff 100%)`,
+                          }}
+                        >
+                          {share.user.username.charAt(0).toUpperCase()}
+                        </div>
+                      )}
                       <span className="text-sm text-cyber-foreground font-mono">{share.user.username}</span>
+                      {share.user?.role === 'ADMIN' && (
+                        <span className="px-1 py-0.5 text-[8px] font-bold text-black" style={{ background: 'linear-gradient(135deg, #ffd700, #ff8c00)', clipPath: 'polygon(0 0, calc(100% - 2px) 0, 100% 2px, 100% 100%, 2px 100%, 0 calc(100% - 2px))' }}>
+                          👑 站长
+                        </span>
+                      )}
                       <span className="text-xs text-cyber-muted-foreground font-mono">
                         {new Date(share.createdAt).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}
                       </span>
