@@ -890,30 +890,30 @@ export default function UserShareCard({ share }: UserShareCardProps) {
       
       {/* 操作栏 */}
       <div className="flex items-center justify-between px-5 py-4 border-t border-[#2a2a3a]">
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5 sm:gap-1 flex-nowrap">
           {/* 点赞 */}
           <button
             id={`like-btn-${share.id}`}
             onClick={handleLike}
-            className={`flex items-center gap-2 px-4 py-2.5 transition-all duration-200 ${
+            className={`flex items-center gap-1 sm:gap-2 px-2 sm:px-4 py-2.5 transition-all duration-200 whitespace-nowrap flex-shrink-0 ${
               isLiked 
                 ? 'text-[#ff3366] bg-[#ff3366]/10 border border-[#ff3366]/30' 
                 : 'text-[#6b7280] hover:text-[#ff3366] hover:bg-[#ff3366]/5'
             }`}
             style={{ clipPath: 'polygon(0 0, calc(100% - 4px) 0, 100% 4px, 100% 100%, 4px 100%, 0 calc(100% - 4px))' }}
           >
-            <Heart className={`w-5 h-5 ${isLiked ? 'fill-current' : ''} transition-transform ${isLiked ? 'scale-110' : ''}`} />
-            <span className="text-sm font-semibold font-mono">{likeCount > 0 ? likeCount : '点赞'}</span>
+            <Heart className={`w-4 h-4 sm:w-5 sm:h-5 ${isLiked ? 'fill-current' : ''} transition-transform ${isLiked ? 'scale-110' : ''}`} />
+            <span className="text-xs sm:text-sm font-semibold font-mono">{likeCount > 0 ? likeCount : '点赞'}</span>
           </button>
           
           {/* 评论 */}
           <button
             onClick={() => setIsCommentModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2.5 text-[#6b7280] hover:text-[#e0e0e0] hover:bg-[#1c1c2e] transition-all duration-200"
+            className="flex items-center gap-1 sm:gap-2 px-2 sm:px-4 py-2.5 text-[#6b7280] hover:text-[#e0e0e0] hover:bg-[#1c1c2e] transition-all duration-200 whitespace-nowrap flex-shrink-0"
             style={{ clipPath: 'polygon(0 0, calc(100% - 4px) 0, 100% 4px, 100% 100%, 4px 100%, 0 calc(100% - 4px))' }}
           >
-            <MessageCircle className="w-5 h-5" />
-            <span className="text-sm font-semibold font-mono">
+            <MessageCircle className="w-4 h-4 sm:w-5 sm:h-5" />
+            <span className="text-xs sm:text-sm font-semibold font-mono">
               {Number(share._count.comments || 0) > 0 ? share._count.comments : '评论'}
             </span>
           </button>
@@ -921,11 +921,11 @@ export default function UserShareCard({ share }: UserShareCardProps) {
           {/* 分享 */}
           <button
             onClick={systemShare}
-            className="flex items-center gap-2 px-4 py-2.5 text-[#6b7280] hover:text-[#e0e0e0] hover:bg-[#1c1c2e] transition-all duration-200"
+            className="flex items-center gap-1 sm:gap-2 px-2 sm:px-4 py-2.5 text-[#6b7280] hover:text-[#e0e0e0] hover:bg-[#1c1c2e] transition-all duration-200 whitespace-nowrap flex-shrink-0"
             style={{ clipPath: 'polygon(0 0, calc(100% - 4px) 0, 100% 4px, 100% 100%, 4px 100%, 0 calc(100% - 4px))' }}
           >
-            <Share2 className="w-5 h-5" />
-            <span className="text-sm font-semibold font-mono">分享</span>
+            <Share2 className="w-4 h-4 sm:w-5 sm:h-5" />
+            <span className="text-xs sm:text-sm font-semibold font-mono">分享</span>
           </button>
         </div>
         
