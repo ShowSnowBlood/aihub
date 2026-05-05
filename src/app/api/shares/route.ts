@@ -192,19 +192,19 @@ export async function POST(request: NextRequest) {
     const shareWithData = await prisma.$queryRaw`
       SELECT 
         s.*,
-        u.username as userName,
-        u.avatarUrl as userAvatarUrl,
-        t.name as toolName,
-        t.slug as toolSlug,
-        t.shortDesc as toolShortDesc,
-        t.description as toolDescription,
-        t.websiteUrl as toolWebsiteUrl,
-        c.name as categoryName,
-        c.slug as categorySlug
+        u.username as "userName",
+        u."avatarUrl" as "userAvatarUrl",
+        t.name as "toolName",
+        t.slug as "toolSlug",
+        t."shortDesc" as "toolShortDesc",
+        t.description as "toolDescription",
+        t."websiteUrl" as "toolWebsiteUrl",
+        c.name as "categoryName",
+        c.slug as "categorySlug"
       FROM shares s
-      LEFT JOIN users u ON s.userId = u.id
-      LEFT JOIN tools t ON s.toolId = t.id
-      LEFT JOIN categories c ON t.categoryId = c.id
+      LEFT JOIN users u ON s."userId" = u.id
+      LEFT JOIN tools t ON s."toolId" = t.id
+      LEFT JOIN categories c ON t."categoryId" = c.id
       WHERE s.id = ${share.id}
     `
 
