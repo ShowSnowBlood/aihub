@@ -150,16 +150,16 @@ export default async function ToolPage({ params }: ToolPageProps) {
                   <p className="text-cyber-muted-foreground mt-3 text-lg font-mono">{tool.shortDesc}</p>
 
                   {/* Stats */}
-                  <div className="flex items-center gap-6 mt-4 text-sm text-cyber-muted-foreground font-mono">
-                    <span className="flex items-center gap-1">
-                      <Star className="w-4 h-4 text-neon-yellow" />
+                  <div className="flex items-center gap-3 md:gap-6 mt-4 text-sm text-cyber-muted-foreground font-mono flex-wrap">
+                    <span className="flex items-center gap-1 whitespace-nowrap">
+                      <Star className="w-4 h-4 text-neon-yellow flex-shrink-0" />
                       {formatNumber(tool.stars)} stars
                     </span>
-                    <span className="flex items-center gap-1">
-                      <Heart className="w-4 h-4 text-neon-magenta" />
+                    <span className="flex items-center gap-1 whitespace-nowrap">
+                      <Heart className="w-4 h-4 text-neon-magenta flex-shrink-0" />
                       {formatNumber(tool.upvotes)} 推荐
                     </span>
-                    <span>{formatNumber(tool.viewCount)} 次浏览</span>
+                    <span className="whitespace-nowrap">{formatNumber(tool.viewCount)} 次浏览</span>
                   </div>
                 </div>
               </div>

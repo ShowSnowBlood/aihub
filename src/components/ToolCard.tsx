@@ -123,15 +123,15 @@ export default function ToolCard({ tool }: ToolCardProps) {
 
             {/* Stats */}
             <div className="flex items-center justify-between mt-4 pt-3 border-t border-cyber-border">
-              <div className="flex items-center gap-4 text-sm text-cyber-muted-foreground font-mono">
+              <div className="flex items-center gap-2 md:gap-4 text-xs md:text-sm text-cyber-muted-foreground font-mono">
                 {tool.stars > 0 && (
-                  <span className="flex items-center gap-1">
-                    <Star className="w-4 h-4 text-neon-yellow" />
+                  <span className="flex items-center gap-1 whitespace-nowrap">
+                    <Star className="w-3 h-3 md:w-4 md:h-4 text-neon-yellow flex-shrink-0" />
                     {formatNumber(tool.stars)}
                   </span>
                 )}
-                <span className="flex items-center gap-1">
-                  <Heart className="w-4 h-4 text-neon-magenta" />
+                <span className="flex items-center gap-1 whitespace-nowrap">
+                  <Heart className="w-3 h-3 md:w-4 md:h-4 text-neon-magenta flex-shrink-0" />
                   {formatNumber(tool.upvotes)}
                 </span>
               </div>
