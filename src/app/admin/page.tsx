@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { 
   CheckCircle, XCircle, Clock, Eye, 
@@ -491,7 +492,7 @@ export default function AdminPage() {
         <p className="text-gray-500">验证身份中...</p>
       </div>
     </div>
-  ) : !isAdmin ? null : (
+  ) : !isAdmin ? notFound() : (
     <div className="min-h-screen bg-gray-100">
       {/* Header */}
       <div className="bg-white border-b border-gray-200">
