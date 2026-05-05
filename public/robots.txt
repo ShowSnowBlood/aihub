@@ -1,6 +1,6 @@
 User-agent: *
 Allow: /
 Disallow: /api/
+Disallow: /admin/
 
-Sitemap: https://aihub.vercel.app/sitemap.xml
-# ⚠️ 部署时请将 aihub.vercel.app 替换为你的实际域名
+Sitemap: https://ai999999.top/sitemap.xml
