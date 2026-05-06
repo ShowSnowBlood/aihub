@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { BrainCircuit, Github, Zap, Globe, Users, Shield, Code2, Cpu, Radio, Heart, Target, Eye } from 'lucide-react'
 import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
+import ContactButton from '@/components/ContactButton'
 import { prisma } from '@/lib/prisma'
 
 export const dynamic = 'force-dynamic'
@@ -277,13 +278,7 @@ export default async function AboutPage() {
                 <Github className="w-4 h-4" />
                 GitHub
               </a>
-              <a
-                href="mailto:508002830@qq.com"
-                className="inline-flex items-center gap-2 px-6 py-2.5 border border-cyber-border clip-chamfer text-cyber-muted-foreground font-orbitron text-sm uppercase tracking-wider hover:border-neon-green hover:text-neon-green transition-colors"
-              >
-                <Cpu className="w-4 h-4" />
-                联系我们
-              </a>
+              <ContactButton />
             </div>
           </div>
         </div>
