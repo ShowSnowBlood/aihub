@@ -7,8 +7,7 @@ export const metadata: Metadata = {
   description: 'AI Hub收录848+个AI工具，涵盖聊天对话、图像生成、视频生成、代码助手等16个分类。每日更新最新AI资讯和开源项目，一站式发现全球AI工具。',
   keywords: 'AI工具, AI导航, 人工智能工具, AI工具导航站, 免费AI工具, AI集合, AI汇总',
   icons: {
-    icon: '/favicon.png',
-    shortcut: '/favicon.ico',
+    icon: '/favicon.svg',
   },
   openGraph: {
     title: 'AI Hub - 全球AI工具聚合平台',
