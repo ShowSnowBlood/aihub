@@ -308,7 +308,14 @@ export default async function HomePage() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {latestShares.map((share) => {
-              const shareImages = share.images ? JSON.parse(share.images) as string[] : []
+              const shareImages = (() => {
+                if (!share.images) return []
+                if (Array.isArray(share.images)) return share.images
+                try {
+                  const parsed = JSON.parse(share.images)
+                  return Array.isArray(parsed) ? parsed : []
+                } catch { return [] }
+              })()
               return (
                 <Link
                   key={share.id}
