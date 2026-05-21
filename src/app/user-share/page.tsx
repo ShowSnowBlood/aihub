@@ -22,6 +22,7 @@ import {
   Radio,
   Cpu
 } from 'lucide-react'
+import { getShareImages } from '@/lib/share-image'
 
 export const metadata: Metadata = {
   title: '社区分享 | AI Hub',
@@ -97,7 +98,7 @@ async function getToolShares(sort?: string, search?: string) {
     .map((s: any) => ({
       id: s.id,
       content: s.content,
-      images: s.images,
+      images: JSON.stringify(getShareImages(s.id, s.images)),
       video: s.video,
       likes: s.likes,
       viewCount: s.viewCount || 0,
@@ -191,7 +192,7 @@ async function getLifeShares(sort?: string, search?: string) {
     .map((s: any) => ({
       id: s.id,
       content: s.content,
-      images: s.images,
+      images: JSON.stringify(getShareImages(s.id, s.images)),
       video: s.video,
       likes: s.likes,
       viewCount: s.viewCount || 0,
