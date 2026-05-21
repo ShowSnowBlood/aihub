@@ -48,6 +48,7 @@ interface UserShareCardProps {
       comments: number
     }
     pinnedUntil?: string | null
+    firstImageBase64?: string | null
   }
 }
 
@@ -831,7 +832,7 @@ export default function UserShareCard({ share }: UserShareCardProps) {
                 onClick={() => setPreviewImage(img)}
               >
                 <img 
-                  src={img} 
+                  src={idx === 0 && share.firstImageBase64 ? share.firstImageBase64 : img} 
                   alt="" 
                   className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                 />
