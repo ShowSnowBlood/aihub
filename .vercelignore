@@ -1,0 +1,19 @@
+# 排除非生产环境文件 — 减少构建时文件扫描量，防止 micromatch 栈溢出
+*.sql
+*.py
+*.csv
+*.docx
+*.jsonl
+scripts/
+docs/
+logs/
+fix-*.js
+export-*.js
+migrate-*.js
+check-*.js
+gen-*.py
+split-*.py
+_tmp_*
+tmp-*
+full-audit.js
+run-audit.js
