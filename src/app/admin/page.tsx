@@ -473,7 +473,7 @@ export default function AdminPage() {
     }
   }
 
-  // 当切换到 shares tab 时加载数据
+  // 当切换到 shares tab 或筛选条件变化时加载数据
   useEffect(() => {
     if (activeTab === 'shares') {
       loadShares(1)
@@ -1613,7 +1613,7 @@ export default function AdminPage() {
             {shareTotalPages > 1 && (
               <div className="flex items-center justify-between mt-6">
                 <button
-                  onClick={() => setSharePage(p => Math.max(1, p - 1))}
+                  onClick={() => { const next = Math.max(1, sharePage - 1); setSharePage(next); loadShares(next) }}
                   disabled={sharePage === 1}
                   className="px-4 py-2 border border-gray-200 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
                 >
@@ -1621,7 +1621,7 @@ export default function AdminPage() {
                 </button>
                 <span className="text-sm text-gray-600">第 {sharePage} 页 / 共 {shareTotalPages} 页</span>
                 <button
-                  onClick={() => setSharePage(p => Math.min(shareTotalPages, p + 1))}
+                  onClick={() => { const next = Math.min(shareTotalPages, sharePage + 1); setSharePage(next); loadShares(next) }}
                   disabled={sharePage === shareTotalPages}
                   className="px-4 py-2 border border-gray-200 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
                 >
@@ -1781,7 +1781,7 @@ export default function AdminPage() {
             {reportTotalPages > 1 && (
               <div className="flex items-center justify-between mt-6">
                 <button
-                  onClick={() => setReportPage(p => Math.max(1, p - 1))}
+                  onClick={() => { const next = Math.max(1, reportPage - 1); setReportPage(next); loadReports(next) }}
                   disabled={reportPage === 1}
                   className="px-4 py-2 border border-gray-200 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
                 >
@@ -1789,7 +1789,7 @@ export default function AdminPage() {
                 </button>
                 <span className="text-sm text-gray-600">第 {reportPage} 页 / 共 {reportTotalPages} 页</span>
                 <button
-                  onClick={() => setReportPage(p => Math.min(reportTotalPages, p + 1))}
+                  onClick={() => { const next = Math.min(reportTotalPages, reportPage + 1); setReportPage(next); loadReports(next) }}
                   disabled={reportPage === reportTotalPages}
                   className="px-4 py-2 border border-gray-200 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
                 >
