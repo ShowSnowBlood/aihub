@@ -670,7 +670,7 @@ export default function AdminPage() {
                     (statusFilter === 'rejected' && stat.label === '已拒绝') ||
                     (statusFilter === 'suspended' && stat.label === '已下架')
                       ? `border-${stat.color}-500 ring-1 ring-${stat.color}-500`
-                      : 'border-transparent hover:border-gray-200'
+                      : 'border-gray-200 hover:border-gray-400'
                   }`}
                 >
                   <div className="flex items-center gap-2 text-gray-500 mb-1">
@@ -1226,7 +1226,7 @@ export default function AdminPage() {
                     (shareTypeFilter === 'tool' && stat.label === '工具圈') ||
                     (shareTypeFilter === 'life' && stat.label === '生活圈')
                       ? `border-${stat.color}-500 ring-1 ring-${stat.color}-500`
-                      : 'border-transparent hover:border-gray-200'
+                      : 'border-gray-200 hover:border-gray-400'
                   }`}
                 >
                   <div className="flex items-center justify-between">
@@ -1653,7 +1653,7 @@ export default function AdminPage() {
                     (stat.label === '已驳回' && reportStatusFilter === 'dismissed') ||
                     (stat.label === '全部' && reportStatusFilter === 'all')
                       ? 'border-primary-500 ring-2 ring-primary-200'
-                      : 'border-transparent hover:border-gray-200'
+                      : 'border-gray-200 hover:border-gray-400'
                   }`}
                 >
                   <div className="flex items-center gap-2 mb-2">

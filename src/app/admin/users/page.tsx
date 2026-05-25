@@ -221,7 +221,7 @@ export default function AdminUsersPage() {
                 (stat.label === '封禁用户' && statusFilter === 'banned') ||
                 (stat.label === '总计' && statusFilter === 'all')
                   ? `border-${stat.color}-500 ring-1 ring-${stat.color}-500`
-                  : 'border-transparent hover:border-gray-200'
+                  : 'border-gray-200 hover:border-gray-400'
               }`}
             >
               <div className="flex items-center gap-2 mb-2">
