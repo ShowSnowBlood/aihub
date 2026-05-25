@@ -1,10 +1,7 @@
 name: IndexNow 流式推送
 
 on:
-  # 每天 UTC 6:00 = 北京时间 14:00 自动推送
-  schedule:
-    - cron: '0 6 * * *'
-  # push 到 main 分支时自动触发
+  # push 到 main 分支时自动触发（仅内容变更时）
   push:
     branches: [ main ]
     paths:
