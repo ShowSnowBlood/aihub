@@ -39,31 +39,25 @@ export async function GET(request: NextRequest) {
         t."createdAt" DESC`
       : `ORDER BY t."createdAt" DESC`
 
-    // 获取工具列表
-    const tools = await prisma.$queryRawUnsafe(`
-      SELECT t.*, c.name as "categoryName"
-      FROM tools t
-      LEFT JOIN categories c ON t."categoryId" = c.id
-      ${whereClause}
-      ${orderClause}
-      LIMIT ${limit} OFFSET ${skip}
-    `)
+    // 并行查询：列表 + 统计 + 筛选总数（原来 6 次串行 → 2 次并行）
+    const [tools, statsResult, totalResult] = await Promise.all([
+      prisma.$queryRawUnsafe(`
+        SELECT t.*, c.name as "categoryName"
+        FROM tools t
+        LEFT JOIN categories c ON t."categoryId" = c.id
+        ${whereClause}
+        ${orderClause}
+        LIMIT ${limit} OFFSET ${skip}
+      `),
+      prisma.$queryRawUnsafe(`SELECT status, COUNT(*) as count FROM tools GROUP BY status`),
+      prisma.$queryRawUnsafe(`SELECT COUNT(*) as count FROM tools t ${whereClause}`)
+    ]) as [any[], any[], any[]]
 
-    // 获取统计
-    const totalResult = await prisma.$queryRawUnsafe(`SELECT COUNT(*) as count FROM tools t ${whereClause}`)
-    const total = Number((totalResult as any)[0].count)
-
-    const pendingResult = await prisma.$queryRawUnsafe(`SELECT COUNT(*) as count FROM tools WHERE status = 'pending'`)
-    const pending = Number((pendingResult as any)[0].count)
-
-    const approvedResult = await prisma.$queryRawUnsafe(`SELECT COUNT(*) as count FROM tools WHERE status = 'approved'`)
-    const approved = Number((approvedResult as any)[0].count)
-
-    const rejectedResult = await prisma.$queryRawUnsafe(`SELECT COUNT(*) as count FROM tools WHERE status = 'rejected'`)
-    const rejected = Number((rejectedResult as any)[0].count)
-
-    const suspendedResult = await prisma.$queryRawUnsafe(`SELECT COUNT(*) as count FROM tools WHERE status = 'suspended'`)
-    const suspended = Number((suspendedResult as any)[0].count)
+    const total = Number((totalResult as any[])[0]?.count || 0)
+    const pending = Number((statsResult as any[]).find(r => r.status === 'pending')?.count || 0)
+    const approved = Number((statsResult as any[]).find(r => r.status === 'approved')?.count || 0)
+    const rejected = Number((statsResult as any[]).find(r => r.status === 'rejected')?.count || 0)
+    const suspended = Number((statsResult as any[]).find(r => r.status === 'suspended')?.count || 0)
 
     return NextResponse.json({
       tools,
