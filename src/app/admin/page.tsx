@@ -521,14 +521,14 @@ export default function AdminPage() {
   }, [activeTab, verifyLogSuccessFilter])
 
   return !authChecked ? (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+    <div className="min-h-screen bg-gray-300 flex items-center justify-center">
       <div className="text-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto mb-4" />
         <p className="text-gray-500">验证身份中...</p>
       </div>
     </div>
   ) : !isAdmin ? notFound() : (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen bg-gray-300">
       {/* Header */}
       <div className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
