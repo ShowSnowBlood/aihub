@@ -1611,22 +1611,20 @@ export default function AdminPage() {
 
             {/* 分页 */}
             {shareTotalPages > 1 && (
-              <div className="flex items-center justify-between mt-6">
-                <button
-                  onClick={() => { const next = Math.max(1, sharePage - 1); setSharePage(next); loadShares(next) }}
-                  disabled={sharePage === 1}
-                  className="px-4 py-2 border border-gray-200 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                >
-                  上一页
-                </button>
-                <span className="text-sm text-gray-600">第 {sharePage} 页 / 共 {shareTotalPages} 页</span>
-                <button
-                  onClick={() => { const next = Math.min(shareTotalPages, sharePage + 1); setSharePage(next); loadShares(next) }}
-                  disabled={sharePage === shareTotalPages}
-                  className="px-4 py-2 border border-gray-200 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                >
-                  下一页
-                </button>
+              <div className="flex items-center justify-between pt-4">
+                <span className="text-sm text-gray-500">共 {shareTotal} 条，第 {sharePage}/{shareTotalPages} 页</span>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => { const next = Math.max(1, sharePage - 1); setSharePage(next); loadShares(next) }} disabled={sharePage === 1} className="p-2 rounded-lg border border-gray-200 disabled:opacity-50 hover:bg-gray-50"><ChevronLeft className="w-4 h-4" /></button>
+                  {Array.from({ length: Math.min(5, shareTotalPages) }, (_, i) => {
+                    let pageNum = shareTotalPages <= 5 ? i + 1 : sharePage <= 3 ? i + 1 : sharePage >= shareTotalPages - 2 ? shareTotalPages - 4 + i : sharePage - 2 + i
+                    return (
+                      <button key={pageNum} onClick={() => { setSharePage(pageNum); loadShares(pageNum) }} className={`w-8 h-8 rounded-lg text-sm font-medium ${sharePage === pageNum ? 'bg-primary-600 text-white' : 'border border-gray-200 hover:bg-gray-50'}`}>
+                        {pageNum}
+                      </button>
+                    )
+                  })}
+                  <button onClick={() => { const next = Math.min(shareTotalPages, sharePage + 1); setSharePage(next); loadShares(next) }} disabled={sharePage === shareTotalPages} className="p-2 rounded-lg border border-gray-200 disabled:opacity-50 hover:bg-gray-50"><ChevronRight className="w-4 h-4" /></button>
+                </div>
               </div>
             )}
           </>
@@ -1779,22 +1777,20 @@ export default function AdminPage() {
 
             {/* 分页 */}
             {reportTotalPages > 1 && (
-              <div className="flex items-center justify-between mt-6">
-                <button
-                  onClick={() => { const next = Math.max(1, reportPage - 1); setReportPage(next); loadReports(next) }}
-                  disabled={reportPage === 1}
-                  className="px-4 py-2 border border-gray-200 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                >
-                  上一页
-                </button>
-                <span className="text-sm text-gray-600">第 {reportPage} 页 / 共 {reportTotalPages} 页</span>
-                <button
-                  onClick={() => { const next = Math.min(reportTotalPages, reportPage + 1); setReportPage(next); loadReports(next) }}
-                  disabled={reportPage === reportTotalPages}
-                  className="px-4 py-2 border border-gray-200 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                >
-                  下一页
-                </button>
+              <div className="flex items-center justify-between pt-4">
+                <span className="text-sm text-gray-500">共 {reportTotal} 条，第 {reportPage}/{reportTotalPages} 页</span>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => { const next = Math.max(1, reportPage - 1); setReportPage(next); loadReports(next) }} disabled={reportPage === 1} className="p-2 rounded-lg border border-gray-200 disabled:opacity-50 hover:bg-gray-50"><ChevronLeft className="w-4 h-4" /></button>
+                  {Array.from({ length: Math.min(5, reportTotalPages) }, (_, i) => {
+                    let pageNum = reportTotalPages <= 5 ? i + 1 : reportPage <= 3 ? i + 1 : reportPage >= reportTotalPages - 2 ? reportTotalPages - 4 + i : reportPage - 2 + i
+                    return (
+                      <button key={pageNum} onClick={() => { setReportPage(pageNum); loadReports(pageNum) }} className={`w-8 h-8 rounded-lg text-sm font-medium ${reportPage === pageNum ? 'bg-primary-600 text-white' : 'border border-gray-200 hover:bg-gray-50'}`}>
+                        {pageNum}
+                      </button>
+                    )
+                  })}
+                  <button onClick={() => { const next = Math.min(reportTotalPages, reportPage + 1); setReportPage(next); loadReports(next) }} disabled={reportPage === reportTotalPages} className="p-2 rounded-lg border border-gray-200 disabled:opacity-50 hover:bg-gray-50"><ChevronRight className="w-4 h-4" /></button>
+                </div>
               </div>
             )}
           </>
