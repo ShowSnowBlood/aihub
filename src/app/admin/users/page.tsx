@@ -226,7 +226,7 @@ export default function AdminUsersPage() {
             >
               <div className="flex items-center gap-2 mb-2">
                 <stat.icon className={`w-5 h-5 text-${stat.color}-500`} />
-                <span className="text-gray-500 text-sm">{stat.label}</span>
+                <span className="text-gray-700 text-sm">{stat.label}</span>
               </div>
               <div className="text-2xl font-bold text-gray-900">{stat.value}</div>
             </button>
@@ -242,15 +242,15 @@ export default function AdminUsersPage() {
               value={search}
               onChange={e => { setSearch(e.target.value); setPage(1) }}
               placeholder="搜索用户名或邮箱..."
-              className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+              className="h-10 w-full pl-10 pr-4 py-0 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
             />
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-500">状态:</span>
+            <span className="text-sm text-gray-700">状态:</span>
             <select
               value={statusFilter}
               onChange={e => { setStatusFilter(e.target.value as any); setPage(1) }}
-              className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="h-10 px-3 py-0 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
             >
               <option value="all">全部</option>
               <option value="active">正常</option>
@@ -426,7 +426,7 @@ export default function AdminUsersPage() {
                   value={banReason}
                   onChange={e => setBanReason(e.target.value)}
                   placeholder="请输入封禁原因..."
-                  className="w-full h-24 p-3 border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                  className="w-full h-24 p-3 border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
                 />
               </div>
               

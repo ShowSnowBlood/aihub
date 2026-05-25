@@ -673,7 +673,7 @@ export default function AdminPage() {
                       : 'border-gray-200 hover:border-gray-400'
                   }`}
                 >
-                  <div className="flex items-center gap-2 text-gray-500 mb-1">
+                  <div className="flex items-center gap-2 text-gray-700 mb-1">
                     <stat.icon className="w-4 h-4" />
                     <span className="text-xs">{stat.label}</span>
                   </div>
@@ -691,16 +691,16 @@ export default function AdminPage() {
                   value={toolSearch}
                   onChange={e => { setToolSearch(e.target.value); setToolPage(1) }}
                   placeholder="搜索工具名称或描述..."
-                  className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                  className="h-10 w-full pl-10 pr-4 py-0 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
                 />
               </div>
               {/* 来源筛选 */}
               <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-500">来源:</span>
+                <span className="text-sm text-gray-700">来源:</span>
                 <select
                   value={sourceFilter}
                   onChange={e => { setSourceFilter(e.target.value as SourceFilter); setToolPage(1) }}
-                  className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="h-10 px-3 py-0 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                 >
                   <option value="all">全部</option>
                   <option value="crawler">我的工具</option>
@@ -1058,7 +1058,7 @@ export default function AdminPage() {
                   value={commentSearch}
                   onChange={e => { setCommentSearch(e.target.value); setCommentPage(1) }}
                   placeholder="搜索评论内容..."
-                  className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                  className="h-10 w-full pl-10 pr-4 py-0 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
                 />
               </div>
               <button
@@ -1231,7 +1231,7 @@ export default function AdminPage() {
                 >
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-gray-500">{stat.label}</p>
+                      <p className="text-sm text-gray-700">{stat.label}</p>
                       <p className={`text-2xl font-bold text-${stat.color}-600`}>{stat.value}</p>
                     </div>
                     <stat.icon className={`w-8 h-8 text-${stat.color}-200`} />
@@ -1260,8 +1260,8 @@ export default function AdminPage() {
                   ))}
                 </div>
                 {/* 类型筛选 */}
-                <div className="flex items-center gap-2 border-l border-gray-200 pl-4">
-                  <span className="text-sm text-gray-500">类型:</span>
+                <div className="flex items-center gap-2 border-l border-gray-300 pl-4">
+                  <span className="text-sm text-gray-700">类型:</span>
                   {(['all', 'tool', 'life'] as const).map((t) => (
                     <button
                       key={t}
@@ -1285,7 +1285,7 @@ export default function AdminPage() {
                       value={shareSearch}
                       onChange={(e) => setShareSearch(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && loadShares()}
-                      className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      className="h-10 w-full pl-10 pr-4 py-0 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
                     />
                   </div>
                 </div>
@@ -1658,7 +1658,7 @@ export default function AdminPage() {
                 >
                   <div className="flex items-center gap-2 mb-2">
                     <stat.icon className={`w-5 h-5 text-${stat.color}-500`} />
-                    <span className="text-gray-500 text-sm">{stat.label}</span>
+                    <span className="text-gray-700 text-sm">{stat.label}</span>
                   </div>
                   <div className="text-2xl font-bold text-gray-900">{stat.value}</div>
                 </button>
@@ -1802,23 +1802,23 @@ export default function AdminPage() {
             {/* 统计卡片 */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
               <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-                <div className="text-xs text-gray-500 mb-1">24h 总请求</div>
+                <div className="text-xs text-gray-700 mb-1">24h 总请求</div>
                 <div className="text-2xl font-bold text-gray-900">{verifyStats.totalRequests}</div>
               </div>
               <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-                <div className="text-xs text-gray-500 mb-1">24h 发送成功</div>
+                <div className="text-xs text-gray-700 mb-1">24h 发送成功</div>
                 <div className="text-2xl font-bold text-green-600">{verifyStats.successCount}</div>
               </div>
               <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-                <div className="text-xs text-gray-500 mb-1">24h 被拦截</div>
+                <div className="text-xs text-gray-700 mb-1">24h 被拦截</div>
                 <div className="text-2xl font-bold text-red-500">{verifyStats.failCount}</div>
               </div>
               <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-                <div className="text-xs text-gray-500 mb-1">24h 独立邮箱</div>
+                <div className="text-xs text-gray-700 mb-1">24h 独立邮箱</div>
                 <div className="text-2xl font-bold text-blue-600">{verifyStats.uniqueEmails}</div>
               </div>
               <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-                <div className="text-xs text-gray-500 mb-1">24h 独立IP</div>
+                <div className="text-xs text-gray-700 mb-1">24h 独立IP</div>
                 <div className="text-2xl font-bold text-purple-600">{verifyStats.uniqueIps}</div>
               </div>
             </div>
@@ -1831,7 +1831,7 @@ export default function AdminPage() {
                 value={verifyLogSearchEmail}
                 onChange={e => setVerifyLogSearchEmail(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && loadVerifyLogs(1)}
-                className="px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 w-52"
+                className="h-10 px-4 py-0 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 w-52"
               />
               <input
                 type="text"
@@ -1839,12 +1839,12 @@ export default function AdminPage() {
                 value={verifyLogSearchIp}
                 onChange={e => setVerifyLogSearchIp(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && loadVerifyLogs(1)}
-                className="px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 w-40"
+                className="h-10 px-4 py-0 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 w-40"
               />
               <select
                 value={verifyLogSuccessFilter}
                 onChange={e => setVerifyLogSuccessFilter(e.target.value as any)}
-                className="px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                className="h-10 px-4 py-0 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
               >
                 <option value="all">全部状态</option>
                 <option value="true">发送成功</option>
