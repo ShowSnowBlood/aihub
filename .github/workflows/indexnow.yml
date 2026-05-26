@@ -19,25 +19,21 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 设置 Node.js
+      - name: 设置 Node.js 18
         uses: actions/setup-node@v4
         with:
           node-version: 18
 
-      - name: 安装依赖（含 dev）
-        run: npm install --prefer-offline
-        working-directory: .
-
       - name: 网络连通性检查
         run: |
-          echo "=== DNS ==="
-          nslookup ai999999.top
           echo "=== Sitemap ==="
           curl -s -o /dev/null -w "HTTP %{http_code}\n" https://ai999999.top/sitemap.xml
-          echo "=== IndexNow API ==="
-          curl -s -o /dev/null -w "HTTP %{http_code}\n" https://api.indexnow.org
-        shell: bash
+          echo "=== IndexNow API test ==="
+          curl -s -X POST "https://api.indexnow.org/indexnow" \
+            -H "Content-Type: application/json" \
+            -d '{"host":"ai999999.top","key":"25dae7e87ad508621408a0351647d05d19fa4c606d8266bfffa947146a16c4ac","keyLocation":"https://ai999999.top/25dae7e87ad508621408a0351647d05d19fa4c606d8266bfffa947146a16c4ac.txt","urlList":["https://ai999999.top/tools"]}' \
+            -w "\nHTTP %{http_code}" --max-time 10
 
       - name: 流式推送 IndexNow（限前 200 条）
-        run: npm run indexnow -- --limit 200
+        run: node src/scripts/submit-indexnow.mjs --limit 200
         working-directory: .
