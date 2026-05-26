@@ -25,9 +25,9 @@ jobs:
           node-version: 18
 
       - name: 安装依赖（含 dev）
-        run: npm install
+        run: npm install --prefer-offline
         working-directory: .
 
-      - name: 流式推送 IndexNow
-        run: npx tsx src/scripts/submit-indexnow.ts
+      - name: 流式推送 IndexNow（限前 200 条，缩短 CI 时间）
+        run: npx tsx src/scripts/submit-indexnow.ts --limit 200
         working-directory: .

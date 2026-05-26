@@ -4,13 +4,12 @@
  * 功能：
  * 1. 读取站点 sitemap.xml
  * 2. 解析所有 URL
- * 3. 分批流式推送至 IndexNow API（每批 5 条，间隔 500ms）
- * 
- * Bing 建议 Streaming 模式：逐条或小批量提交，避免服务器过载和被拒（410）
+ * 3. 分批流式推送至 IndexNow API（每批 50 条，间隔 100ms）
  * 
  * 用法：
- *   npm run indexnow           # 推送 sitemap 中所有 URL
- *   npm run indexnow -- --url "https://ai999999.top/tools/xxx"   # 推送单条 URL
+ *   npm run indexnow                  # 推送 sitemap 中所有 URL
+ *   npm run indexnow -- --limit 200   # 只推送前 200 条（CI 使用）
+ *   npm run indexnow -- --url "..."   # 推送单条 URL
  */
 
 const INDEXNOW_API = 'https://api.indexnow.org/indexnow'
@@ -19,10 +18,12 @@ const SITEMAP_URL = 'https://ai999999.top/sitemap.xml'
 const API_KEY = '25dae7e87ad508621408a0351647d05d19fa4c606d8266bfffa947146a16c4ac'
 const KEY_LOCATION = `https://${SITE_HOST}/${API_KEY}.txt`
 
-// 每批提交数量（Bing 推荐的 streaming 上限）
-const BATCH_SIZE = 5
-// 批次间隔（毫秒）
-const BATCH_DELAY = 500
+// 每批提交数量（CI 环境下用 50 批大幅缩短总耗时）
+const BATCH_SIZE = 50
+// 批次间隔（毫秒，缩短到 100ms 减少总时长）
+const BATCH_DELAY = 100
+// 失败重试次数
+const MAX_RETRIES = 3
 
 interface IndexNowPayload {
   host: string
@@ -64,9 +65,9 @@ async function fetchSitemapUrls(): Promise<string[]> {
 }
 
 /**
- * 提交一批 URL 到 IndexNow API
+ * 提交一批 URL 到 IndexNow API（带重试）
  */
-async function submitBatch(urls: string[]): Promise<boolean> {
+async function submitBatch(urls: string[], retryCount = 0): Promise<boolean> {
   const payload: IndexNowPayload = {
     host: SITE_HOST,
     key: API_KEY,
@@ -85,16 +86,23 @@ async function submitBatch(urls: string[]): Promise<boolean> {
       console.log(`  ✅ 提交 ${urls.length} 条成功`)
       return true
     } else if (res.status === 202) {
-      // 202 Accepted 也是成功
       console.log(`  ✅ 提交 ${urls.length} 条已接受 (202)`)
       return true
     } else {
       const body = await res.text().catch(() => '')
       console.error(`  ❌ 提交失败: HTTP ${res.status} ${body}`)
-      return false
+      // 非 429/5xx 不重试
+      if (res.status !== 429 && res.status < 500) return false
+      throw new Error(`HTTP ${res.status}: ${body}`)
     }
   } catch (err) {
-    console.error(`  ❌ 网络错误:`, err instanceof Error ? err.message : err)
+    if (retryCount < MAX_RETRIES) {
+      const wait = Math.min(1000 * Math.pow(2, retryCount), 10000)
+      console.log(`  🔄 重试 ${retryCount + 1}/${MAX_RETRIES}（等待 ${wait}ms）...`)
+      await sleep(wait)
+      return submitBatch(urls, retryCount + 1)
+    }
+    console.error(`  ❌ 重试耗尽:`, err instanceof Error ? err.message : err)
     return false
   }
 }
@@ -105,26 +113,34 @@ async function submitBatch(urls: string[]): Promise<boolean> {
 async function submitAllStreaming(urls: string[]): Promise<{ success: number; failed: number }> {
   let success = 0
   let failed = 0
+  const total = urls.length
+  const totalBatches = Math.ceil(total / BATCH_SIZE)
 
-  console.log(`🚀 开始流式推送 ${urls.length} 条 URL（每批 ${BATCH_SIZE} 条，间隔 ${BATCH_DELAY}ms）`)
+  console.log(`🚀 开始流式推送 ${total} 条 URL（每批 ${BATCH_SIZE} 条，间隔 ${BATCH_DELAY}ms，共 ${totalBatches} 批）`)
   console.log('')
 
-  for (let i = 0; i < urls.length; i += BATCH_SIZE) {
+  for (let i = 0; i < total; i += BATCH_SIZE) {
     const batch = urls.slice(i, i + BATCH_SIZE)
     const batchNum = Math.floor(i / BATCH_SIZE) + 1
-    const totalBatches = Math.ceil(urls.length / BATCH_SIZE)
 
-    process.stdout.write(`  [${batchNum}/${totalBatches}] `)
+    // 只显示批次号，减少日志量
+    if (totalBatches <= 100 || batchNum % 5 === 1 || batchNum === totalBatches) {
+      process.stdout.write(`  [${batchNum}/${totalBatches}] `)
+    }
+
     const ok = await submitBatch(batch)
 
     if (ok) {
       success += batch.length
+      if (totalBatches <= 100 || batchNum % 5 === 1 || batchNum === totalBatches) {
+        console.log(`  ✅`)
+      }
     } else {
       failed += batch.length
+      console.log(`  ❌`)
     }
 
-    // 除了最后一批，其他都等一下再发
-    if (i + BATCH_SIZE < urls.length) {
+    if (i + BATCH_SIZE < total) {
       await sleep(BATCH_DELAY)
     }
   }
@@ -154,6 +170,19 @@ async function main() {
   // 检查命令行参数
   const args = process.argv.slice(2)
   const urlIndex = args.indexOf('--url')
+  const limitIndex = args.indexOf('--limit')
+
+  // --limit 参数：限制推送条数
+  let limit: number | undefined
+  if (limitIndex !== -1 && args[limitIndex + 1]) {
+    limit = parseInt(args[limitIndex + 1], 10)
+    if (isNaN(limit) || limit <= 0) {
+      console.error('❌ --limit 必须是正整数')
+      process.exit(1)
+    }
+    console.log(`📐 限制推送前 ${limit} 条`)
+    console.log('')
+  }
 
   if (urlIndex !== -1 && args[urlIndex + 1]) {
     // 单条推送
@@ -170,7 +199,13 @@ async function main() {
       process.exit(0)
     }
 
-    const { success, failed } = await submitAllStreaming(urls)
+    const finalUrls = limit ? urls.slice(0, limit) : urls
+    if (limit && limit < urls.length) {
+      console.log(`📐 已从 ${urls.length} 条中截取前 ${limit} 条`)
+      console.log('')
+    }
+
+    const { success, failed } = await submitAllStreaming(finalUrls)
 
     console.log('')
     console.log('═══════════════════════════════════════════')
