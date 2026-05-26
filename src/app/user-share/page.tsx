@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { prisma } from '@/lib/prisma'
 import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
@@ -269,6 +270,15 @@ export default async function UserSharePage({ searchParams }: UserSharePageProps
     getStats(),
     getPopularTags(),
   ])
+
+  // 搜索时自动跳转到有结果的圈子
+  if (search) {
+    if (tab === 'tool' && toolShares.length === 0 && lifeShares.length > 0) {
+      redirect(`/user-share?tab=life&search=${encodeURIComponent(search)}`)
+    } else if (tab === 'life' && lifeShares.length === 0 && toolShares.length > 0) {
+      redirect(`/user-share?tab=tool&search=${encodeURIComponent(search)}`)
+    }
+  }
 
   const currentShares = tab === 'tool' ? toolShares : lifeShares
 
@@ -583,7 +593,7 @@ export default async function UserSharePage({ searchParams }: UserSharePageProps
                   popularTags.map((tag) => (
                     <Link
                       key={tag.name}
-                      href={`/user-share?tab=${tab}&search=${encodeURIComponent(tag.name)}`}
+                      href={`/user-share?search=${encodeURIComponent(tag.name)}`}
                       className="px-3 py-1.5 border border-cyber-border text-sm text-cyber-muted-foreground hover:border-neon-green hover:text-neon-green clip-chamfer-sm transition-colors font-mono"
                     >
                       #{tag.name}
