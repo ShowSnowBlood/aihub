@@ -246,7 +246,7 @@ async function getPopularTags() {
         freq.set(tag, (freq.get(tag) || 0) + 1)
       })
     }
-    const sorted = [...freq.entries()]
+    const sorted = Array.from(freq.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10)
       .map(([name, count]) => ({ name, count }))
