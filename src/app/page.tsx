@@ -170,7 +170,7 @@ export default async function HomePage() {
       _count: { select: { comments: true } }
     },
     orderBy: { createdAt: 'desc' },
-    take: 3,
+    take: 8,
   })
 
   return (
