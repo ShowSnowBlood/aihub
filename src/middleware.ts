@@ -12,6 +12,13 @@ const SECURITY_HEADERS: Record<string, string> = {
   'Referrer-Policy': 'strict-origin-when-cross-origin',
 }
 
+// CORS 头（允许 Hugging Face Space 跨域请求）
+const CORS_HEADERS: Record<string, string> = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+}
+
 // 内存限流
 const requestCounts = new Map<string, { count: number; expiresAt: number }>()
 
@@ -21,6 +28,11 @@ export function middleware(request: NextRequest) {
   // === API 请求限流 ===
   if (!pathname.startsWith('/api/')) {
     return NextResponse.next()
+  }
+
+  // === CORS：处理 OPTIONS 预检请求 ===
+  if (request.method === 'OPTIONS') {
+    return new NextResponse(null, { status: 204, headers: { ...CORS_HEADERS, ...SECURITY_HEADERS } })
   }
 
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
@@ -55,8 +67,8 @@ export function middleware(request: NextRequest) {
   }
 
   const response = NextResponse.next()
-  // 对 API 响应追加安全头（确保即使在 next.config.js 漏掉时也有保护）
-  for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
+  // 对 API 响应追加 CORS + 安全头
+  for (const [key, value] of Object.entries({ ...CORS_HEADERS, ...SECURITY_HEADERS })) {
     response.headers.set(key, value)
   }
   return response
