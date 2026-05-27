@@ -5,6 +5,7 @@ import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
 import ToolCard from '@/components/ToolCard'
 import { getShareImages } from '@/lib/share-image'
+import CategoryGridClient from './CategoryGridClient'
 
 // 全部分类的图标和颜色映射（用于首页探索AI工具区域）
 const CATEGORY_ICONS: Record<string, string> = {
@@ -91,32 +92,6 @@ function StatCard({ value, label, icon: Icon, color }: { value: string; label: s
 }
 
 // Category Card
-function CategoryCard({ name, icon, count, href, color }: { name: string; icon: string; count: number | string; href: string; color: string }) {
-  const colorMap: Record<string, { border: string; text: string; glow: string }> = {
-    green: { border: 'border-neon-green', text: 'text-neon-green', glow: 'hover:shadow-neon' },
-    magenta: { border: 'border-neon-magenta', text: 'text-neon-magenta', glow: 'hover:shadow-neon-secondary' },
-    cyan: { border: 'border-neon-cyan', text: 'text-neon-cyan', glow: 'hover:shadow-neon-tertiary' },
-    yellow: { border: 'border-neon-yellow', text: 'text-neon-yellow', glow: '' },
-  }
-  
-  const colors = colorMap[color] || colorMap.green
-  
-  return (
-    <Link
-      href={href}
-      className={`relative p-6 border ${colors.border} bg-cyber-card/30 transition-all duration-300 hover:-translate-y-1 ${colors.glow} group`}
-    >
-      <div className="text-3xl mb-3">{icon}</div>
-      <div className={`font-orbitron font-bold ${colors.text} group-hover:text-cyber-foreground transition-colors`}>
-        {name}
-      </div>
-      <div className="text-sm text-cyber-muted-foreground font-mono mt-1">
-        {Number(count) > 0 ? `${count} 个工具` : '即将上线'}
-      </div>
-    </Link>
-  )
-}
-
 export default async function HomePage() {
   // 获取推荐工具
   const featuredTools = await prisma.tool.findMany({
@@ -187,6 +162,23 @@ export default async function HomePage() {
     orderBy: { createdAt: 'desc' },
     take: 3,
   })
+
+  // 准备分类卡片数据（按工具数量从多到少排序）
+  const categoryCards = [
+    ...categories
+      .filter(c => c.slug !== 'others')
+      .map(c => ({
+        name: c.name,
+        icon: (CATEGORY_ICONS as Record<string, string>)[c.slug] || '🤖',
+        color: (CATEGORY_COLORS as Record<string, string>)[c.slug] || 'green',
+        count: getCategoryCount(c.slug) as number,
+        href: `/tools?category=${c.slug}`,
+      }))
+      .sort((a, b) => b.count - a.count),
+    { name: '其他工具', icon: '📦', color: 'gray', count: getCategoryCount('others') as number, href: '/tools?category=others' },
+    { name: '开源免费', icon: '🚀', color: 'green', count: totalOpensource as number, href: '/tools?source=opensource' },
+    { name: '用户分享', icon: '🙋', color: 'magenta', count: latestShares.length, href: '/user-share' },
+  ]
 
   return (
     <div className="min-h-screen">
@@ -287,42 +279,7 @@ export default async function HomePage() {
           <h2 className="text-2xl font-orbitron font-bold text-cyber-foreground uppercase tracking-wider text-center mb-12">
             <span className="text-neon-cyan">{'>'}</span> 探索AI工具分类
           </h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 px-1">
-            {[
-              // 按工具数量从多到少排序
-              ...categories
-                .filter(c => c.slug !== 'others')
-                .map(c => ({
-                  name: c.name,
-                  icon: (CATEGORY_ICONS as Record<string, string>)[c.slug] || '🤖',
-                  slug: c.slug,
-                  color: (CATEGORY_COLORS as Record<string, string>)[c.slug] || 'green',
-                  count: getCategoryCount(c.slug),
-                }))
-                .sort((a, b) => (b.count as number) - (a.count as number))
-                .map(({ count, ...rest }) => rest),
-              { name: '其他工具', icon: '📦', slug: 'others', color: 'gray' },
-              { name: '开源免费', icon: '🚀', slug: 'opensource', color: 'green', isSource: true },
-              { name: '用户分享', icon: '🙋', slug: 'user-share', color: 'magenta', isSpecial: true },
-            ].map((cat: any) => {
-              const count = cat.isSource
-                ? (cat.slug === 'opensource' ? totalOpensource : totalTools - totalOpensource)
-                : cat.isSpecial 
-                  ? latestShares.length 
-                  : getCategoryCount(cat.slug)
-              
-              return (
-                <CategoryCard
-                  key={cat.name}
-                  name={cat.name}
-                  icon={cat.icon}
-                  count={count}
-                  href={cat.isSpecial ? `/${cat.slug}` : (cat.isSource ? `/tools?source=${cat.slug}` : `/tools?category=${cat.slug}`)}
-                  color={cat.color}
-                />
-              )
-            })}
-          </div>
+          <CategoryGridClient categories={categoryCards} />
         </div>
       </section>
 
