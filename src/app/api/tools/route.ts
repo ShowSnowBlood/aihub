@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
+// CORS 头
+const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' }
+
+// OPTIONS 预检
+export async function OPTIONS() {
+  return NextResponse.json(null, { headers: CORS })
+}
+
 // GET /api/tools - 获取工具列表（只返回 approved 的）
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
@@ -48,7 +56,7 @@ export async function GET(request: NextRequest) {
     total,
     page,
     totalPages: Math.ceil(total / limit)
-  })
+  }, { headers: CORS })
 }
 
 // POST /api/tools - 提交新工具（创建 shares 记录，显示在工具圈）
