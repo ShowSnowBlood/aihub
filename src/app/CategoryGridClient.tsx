@@ -64,7 +64,11 @@ export default function CategoryGridClient({ categories }: { categories: Categor
       {showAll && (
         <div className="text-center mt-8">
           <button
-            onClick={() => setShowAll(false)}
+            onClick={() => {
+              setShowAll(false)
+              // 收起后滚动到分类区域顶部，避免页面跳动
+              document.getElementById('categories-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            }}
             className="px-6 py-2.5 border border-neon-cyan/40 text-neon-cyan font-mono text-sm
                        transition-all duration-300 hover:bg-neon-cyan/10 hover:border-neon-cyan
                        hover:shadow-[0_0_20px_rgba(0,212,255,0.15)]"

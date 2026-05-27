@@ -273,7 +273,7 @@ export default async function HomePage() {
       </section>
 
       {/* Categories */}
-      <section className="py-16 relative">
+      <section id="categories-section" className="py-16 relative">
         <div className="absolute inset-0 bg-cyber-muted/10" />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative">
           <h2 className="text-2xl font-orbitron font-bold text-cyber-foreground uppercase tracking-wider text-center mb-12">
