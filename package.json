@@ -15,6 +15,7 @@
     "crawl": "tsx src/scripts/crawler.ts",
     "crawl:rss": "tsx src/scripts/rss-crawler.ts",
     "crawl:latest": "tsx src/scripts/latest-tools-crawler.ts",
+    "backfill:stars": "tsx scripts/backfill-stars.ts",
     "crawl:itc": "tsx src/scripts/itc-crawler.ts",
     "crawl:github": "tsx src/scripts/github-trending-crawler.ts",
     "update-data": "tsx src/scripts/update-data.ts",
