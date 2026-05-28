@@ -345,6 +345,21 @@ async function main() {
   console.log(`📦 近期新增: ${saved}/${uniqueTools.length}`)
   console.log(`⏭️  跳过(已存在): ${skipped}`)
 
+  // 如果有新工具，自动翻译英文简介
+  const totalNew = hotSaved + saved
+  if (totalNew > 0) {
+    console.log(`\n🌐 检测到 ${totalNew} 个新工具，启动翻译...`)
+    try {
+      execSync('npx tsx scripts/batch-translate.ts', {
+        cwd: process.cwd(),
+        encoding: 'utf-8',
+        timeout: 300000,
+      })
+    } catch (err) {
+      console.error('⚠️ 翻译过程出错（不影响已保存的工具）:', err instanceof Error ? err.message : err)
+    }
+  }
+
   await prisma.$disconnect()
 }
 
