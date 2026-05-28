@@ -91,8 +91,23 @@ export async function GET(request: NextRequest) {
     const sharesArray = shares as any[]
     const total = sharesArray.length > 0 ? Number(sharesArray[0]?.totalCount || 0) : 0
 
+    // 递归转换 BigInt 为 Number，防止 JSON.stringify 报错
+    const sanitizeBigInt = (obj: any): any => {
+      if (obj === null || obj === undefined) return obj
+      if (typeof obj === 'bigint') return Number(obj)
+      if (Array.isArray(obj)) return obj.map(sanitizeBigInt)
+      if (typeof obj === 'object') {
+        const result: any = {}
+        for (const [key, value] of Object.entries(obj)) {
+          result[key] = sanitizeBigInt(value)
+        }
+        return result
+      }
+      return obj
+    }
+
     // 转换数据格式，把 base64 图片替换为 proxy URL
-    const formattedShares = (sharesArray).map(share => {
+    const formattedShares = (sanitizeBigInt(sharesArray)).map((share: any) => {
       let images: string[] = []
       try {
         const raw = typeof share.images === 'string' ? JSON.parse(share.images) : share.images

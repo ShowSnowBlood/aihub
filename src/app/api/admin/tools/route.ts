@@ -95,13 +95,29 @@ export async function GET(request: NextRequest) {
 
     const toolsArray = tools as any[]
     const total = toolsArray.length > 0 ? Number(toolsArray[0]?.totalCount || 0) : 0
+
+    // 递归转换 BigInt 为 Number，防止 JSON.stringify 报错
+    const sanitizeBigInt = (obj: any): any => {
+      if (obj === null || obj === undefined) return obj
+      if (typeof obj === 'bigint') return Number(obj)
+      if (Array.isArray(obj)) return obj.map(sanitizeBigInt)
+      if (typeof obj === 'object') {
+        const result: any = {}
+        for (const [key, value] of Object.entries(obj)) {
+          result[key] = sanitizeBigInt(value)
+        }
+        return result
+      }
+      return obj
+    }
+
     const pending = Number((statsResult as any[]).find(r => r.status === 'pending')?.count || 0)
     const approved = Number((statsResult as any[]).find(r => r.status === 'approved')?.count || 0)
     const rejected = Number((statsResult as any[]).find(r => r.status === 'rejected')?.count || 0)
     const suspended = Number((statsResult as any[]).find(r => r.status === 'suspended')?.count || 0)
 
     return NextResponse.json({
-      tools,
+      tools: sanitizeBigInt(toolsArray),
       total,
       page,
       totalPages: Math.ceil(total / limit),
