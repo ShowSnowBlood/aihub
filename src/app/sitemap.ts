@@ -43,14 +43,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.8
   }))
 
-  // 分类页
-  const categoryPages = categories.map(cat => ({
-    url: `${baseUrl}/category/${cat.slug}`,
-    lastModified: new Date(),
-    changeFrequency: 'daily' as const,
-    priority: 0.7
-  }))
-
   // 资讯详情页
   const newsPages = news.map(article => ({
     url: `${baseUrl}/news/${article.id}`,
@@ -61,5 +53,5 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   await prisma.$disconnect()
 
-  return [...staticPages, ...toolPages, ...categoryPages, ...newsPages]
+  return [...staticPages, ...toolPages, ...newsPages]
 }
