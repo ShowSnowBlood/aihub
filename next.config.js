@@ -79,5 +79,15 @@ const nextConfig = {
     ]
   }
 }
+  async redirects() {
+    return [
+      {
+        source: '/category/:slug',
+        destination: '/tools?category=:slug',
+        permanent: true,
+      },
+    ]
+  },
+}
 
 module.exports = nextConfig
