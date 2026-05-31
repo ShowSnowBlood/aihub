@@ -235,7 +235,7 @@ export default async function OpenSourcePage({ searchParams }: OpenSourcePagePro
                               href={tool.websiteUrl.replace(/^http:\/\//i, 'https://')}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="flex items-center gap-1 px-3 py-1.5 bg-neon-green/10 text-neon-green border border-neon-green text-sm hover:bg-neon-green hover:text-cyber-background transition-all duration-200 font-mono"
+                              className="flex items-center gap-1 px-2 sm:px-3 py-1.5 bg-neon-green/10 text-neon-green border border-neon-green text-xs sm:text-sm hover:bg-neon-green hover:text-cyber-background transition-all duration-200 font-mono whitespace-nowrap"
                               style={{
                                 clipPath: 'polygon(0 4px, 4px 0, calc(100% - 4px) 0, 100% 4px, 100% calc(100% - 4px), calc(100% - 4px) 100%, 4px 100%, 0 calc(100% - 4px))'
                               }}
