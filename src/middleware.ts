@@ -69,8 +69,6 @@ export function middleware(request: NextRequest) {
 
   const record = requestCounts.get(ip)
 
-  const record = requestCounts.get(ip)
-
   if (!record || record.expiresAt < now) {
     requestCounts.set(ip, { count: 1, expiresAt: now + windowMs })
     return NextResponse.next()
