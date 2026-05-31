@@ -227,7 +227,7 @@ export default async function OpenSourcePage({ searchParams }: OpenSourcePagePro
                                 }}
                               >
                                 <Github className="w-4 h-4 flex-shrink-0" />
-                                <span className="hidden sm:inline">GitHub</span>
+                                <span className="sm:hidden">GH</span><span className="hidden sm:inline">GitHub</span>
                               </a>
                             )}
                             {tool.websiteUrl && (
@@ -241,8 +241,7 @@ export default async function OpenSourcePage({ searchParams }: OpenSourcePagePro
                               }}
                             >
                               <ExternalLink className="w-4 h-4 flex-shrink-0" />
-                              <span className="sm:hidden">官</span>
-                              <span className="hidden sm:inline">官网</span>
+                              官网
                             </a>
                             )}
                           </div>
