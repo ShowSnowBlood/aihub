@@ -232,7 +232,7 @@ export default function AdminPage() {
       loadTools(1)
       setToolPage(1)
     }
-  }, [statusFilter, sourceFilter, toolSearch, activeTab])
+  }, [statusFilter, sourceFilter, timeFilter, toolSearch, activeTab])
 
   useEffect(() => {
     if (activeTab === 'tools') loadTools(toolPage)
