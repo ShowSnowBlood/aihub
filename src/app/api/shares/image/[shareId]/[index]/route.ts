@@ -1,8 +1,9 @@
 import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getImageCacheKey, getCachedImage, setCachedImage } from '@/lib/image-cache'
+import { isR2Image } from '@/lib/r2'
 
-// 将 Buffer 转为标准 Uint8Array，Vercel 新版 TS 对 Node Buffer 类型检查太严
+// 将 Buffer 转为标准 Uint8Array
 function imageResponse(buffer: Buffer, mimeType: string, isHit: boolean): Response {
   return new Response(new Blob([Uint8Array.from(buffer)]), {
     status: 200,
@@ -18,8 +19,7 @@ function imageResponse(buffer: Buffer, mimeType: string, isHit: boolean): Respon
 }
 
 // GET /api/shares/image/{shareId}/{index}
-// 从数据库读取分享图片的 base64 数据，返回 HTTP 图片响应
-// 避免将大图 base64 直接嵌入 HTML（首页 3.4MB HTML 的问题根源）
+// 从数据库读取分享图片，返回 HTTP 图片响应
 export async function GET(
   request: NextRequest,
   { params }: { params: { shareId: string; index: string } }
@@ -39,7 +39,7 @@ export async function GET(
       return imageResponse(cached.buffer, cached.mimeType, true)
     }
 
-    // 2. 只查 images 字段，减少数据传输
+    // 2. 只查 images 字段
     const share = await prisma.share.findUnique({
       where: { id: shareId },
       select: { images: true },
@@ -61,13 +61,18 @@ export async function GET(
       return new Response('Image not found', { status: 404 })
     }
 
-    const imageData = images[index]
-    if (!imageData || typeof imageData !== 'string') {
+    const imageEntry = images[index]
+    if (!imageEntry || typeof imageEntry !== 'string') {
       return new Response('Invalid image data', { status: 500 })
     }
 
-    // 4. 解析 data URI 格式: "data:image/webp;base64,...."
-    const match = imageData.match(/^data:image\/(\w+);base64,(.+)$/)
+    // 4. 如果已经是 R2 URL，302 重定向到 R2
+    if (isR2Image(imageEntry)) {
+      return Response.redirect(imageEntry, 302)
+    }
+
+    // 5. 兼容旧版 base64 data URI 格式
+    const match = imageEntry.match(/^data:image\/(\w+);base64,(.+)$/)
     if (!match) {
       return new Response('Invalid image format', { status: 500 })
     }
@@ -75,14 +80,13 @@ export async function GET(
     const mimeType = `image/${match[1]}`
     const base64Data = match[2]
 
-    // 5. 解码 base64 为 Buffer
+    // 6. 解码 base64 为 Buffer
     const buffer = Buffer.from(base64Data, 'base64')
 
-    // 6. 写入内存缓存
+    // 7. 写入内存缓存
     setCachedImage(cacheKey, buffer, mimeType)
 
-    // 7. 返回图片响应，带强缓存头
-    // 浏览器缓存 1 天，CDN 缓存 7 天，过期后 30 天内允许 stale
+    // 8. 返回图片响应
     return imageResponse(buffer, mimeType, false)
   } catch (error) {
     console.error('图片代理错误:', error)

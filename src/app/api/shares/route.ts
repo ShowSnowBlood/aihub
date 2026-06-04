@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { uploadImage, parseBase64Image, isR2Configured } from '@/lib/r2'
 
 // GET /api/shares?type=tool|life&toolId=&sort=new|hot&page=1&limit=10&search=
 export async function GET(request: NextRequest) {
@@ -186,6 +187,25 @@ export async function POST(request: NextRequest) {
     const isAdmin = poster?.role === 'ADMIN'
     if (isAdmin) shareStatus = 'approved'
     
+    // 将 base64 图片上传到 R2，只存 URL 在数据库
+    if (images && Array.isArray(images) && isR2Configured()) {
+      const uploadedUrls: string[] = []
+      for (let i = 0; i < images.length; i++) {
+        const img = images[i]
+        if (typeof img === 'string' && img.startsWith('data:image/')) {
+          const parsed = parseBase64Image(img)
+          if (parsed) {
+            const key = `shares/temp/${Date.now()}-${i}.${parsed.mimeType.split('/')[1]}`
+            const url = await uploadImage(key, parsed.buffer, parsed.mimeType)
+            uploadedUrls.push(url)
+            continue
+          }
+        }
+        uploadedUrls.push(img)
+      }
+      images = uploadedUrls
+    }
+
     const imagesJson = images ? JSON.stringify(images) : null
     const shareType = type || 'tool'
     const toolIdValue = toolId ? parseInt(toolId) : null
