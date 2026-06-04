@@ -645,20 +645,17 @@ export default async function UserSharePage({ searchParams }: UserSharePageProps
                 加入交流群
               </h3>
               <div className="relative">
-                <a 
-                  href="https://qm.qq.com/q/tCxpzErNXy" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="block cursor-pointer"
-                >
-                  <img 
-                    src="/images/qq-group.jpg" 
-                    alt="QQ交流群二维码"
-                    className="w-full rounded-lg border border-cyber-border hover:border-neon-cyan transition-colors duration-300"
-                  />
-                </a>
-                <p className="text-xs text-cyber-muted-foreground font-mono mt-3 text-center">
-                  扫码加入，交流AI工具与开发心得
+                <img 
+                  src="/images/qq-group.jpg" 
+                  alt="QQ交流群二维码"
+                  className="w-full rounded-lg border border-cyber-border"
+                />
+                <p className="text-center mt-3 font-mono">
+                  <span className="text-xs text-cyber-muted-foreground">群号 </span>
+                  <span className="text-sm text-neon-cyan font-bold">646576998</span>
+                </p>
+                <p className="text-xs text-cyber-muted-foreground font-mono mt-1 text-center">
+                  扫码或搜索群号加入
                 </p>
               </div>
             </div>
