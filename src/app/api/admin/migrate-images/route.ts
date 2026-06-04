@@ -10,8 +10,12 @@ import { verifyAdmin } from '@/lib/auth'
 export async function GET(request: NextRequest) {
   // 验证管理员身份
   const authResult = await verifyAdmin(request)
-  if (authResult instanceof NextResponse || !(authResult as any).authenticated) {
+  if (authResult instanceof NextResponse) {
     return NextResponse.json({ error: '未授权' }, { status: 401 })
+  }
+  // authResult 是 AuthResult { userId, isAdmin }
+  if (!authResult.isAdmin) {
+    return NextResponse.json({ error: '需要管理员权限' }, { status: 403 })
   }
 
   if (!isR2Configured()) {
