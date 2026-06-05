@@ -12,8 +12,9 @@ interface Props {
 }
 
 export default function CreateShareModalNew({ isOpen, onClose, mode = 'life', onSuccess }: Props) {
-  const MAX_CONTENT = 100
+  const MAX_CONTENT = mode === 'tech' ? 1500 : 100
   const MAX_IMAGES = 9
+  const isTechMode = mode === 'tech'
 
   const [user, setUser] = useState<{ id: number; username: string; avatarUrl?: string } | null>(null)
   const [content, setContent] = useState('')
@@ -188,7 +189,7 @@ export default function CreateShareModalNew({ isOpen, onClose, mode = 'life', on
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#2a2a3a] flex-shrink-0 bg-[#0a0a0f]">
           <h2 className="text-lg font-bold text-[#e0e0e0] font-orbitron uppercase tracking-wider">
-            <span className="text-[#00ff88]">{'>'}</span> 发布动态
+            <span className="text-[#00ff88]">{'>'}</span> {isTechMode ? '发布技术分享' : '发布动态'}
           </h2>
           <button 
             onClick={onClose}
@@ -222,7 +223,7 @@ export default function CreateShareModalNew({ isOpen, onClose, mode = 'life', on
                     <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
                     </svg>
-                    发布动态
+                    {isTechMode ? '技术分享' : '发布动态'}
                   </span>
                 </div>
               ) : (
@@ -240,8 +241,8 @@ export default function CreateShareModalNew({ isOpen, onClose, mode = 'life', on
                   setContent(e.target.value)
                 }
               }}
-              placeholder="分享你的生活..."
-              className={`w-full h-[120px] bg-[#0a0a0f] border text-[#e0e0e0] text-sm resize-none focus:outline-none transition-all p-4 font-mono ${
+              placeholder={isTechMode ? '分享你的技术经验、教程、踩坑记录...\n支持 Markdown 格式' : '分享你的生活...'}
+              className={`w-full ${isTechMode ? 'h-[300px]' : 'h-[120px]'} bg-[#0a0a0f] border text-[#e0e0e0] text-sm resize-none focus:outline-none transition-all p-4 font-mono ${
                 content.length >= MAX_CONTENT
                   ? 'border-[#ff3366] focus:border-[#ff3366] focus:shadow-[0_0_10px_#ff336640]'
                   : content.length >= MAX_CONTENT * 0.8
