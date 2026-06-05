@@ -5,7 +5,6 @@ import { createNotification } from '@/lib/notification'
 import { addExp } from '@/lib/add-exp'
 import { EXP_RULES } from '@/lib/level'
 import { checkAndUnlock } from '@/lib/check-achievements'
-import { generateAIReply, shouldAIReply, shouldAILike } from '@/lib/ai-service'
 
 // GET /api/shares/[id]/comments - 获取分享的评论列表
 export async function GET(
@@ -131,53 +130,6 @@ export async function POST(
       console.error('评论通知失败:', e)
     }
 
-    // 触发 AI 自动互动（异步，不阻塞响应）
-    const doAIInteract = async () => {
-      try {
-        const aiUser = await prisma.$queryRaw<Array<any>>`SELECT id FROM users WHERE username = 'AI助手' LIMIT 1`
-        if (!aiUser.length) return
-        const aiUserId = aiUser[0].id
-
-        // 自动点赞
-        if (shouldAILike()) {
-          const existingLike = await prisma.$queryRaw<Array<any>>`
-            SELECT * FROM ai_interactions WHERE targetType = 'share_comment' AND targetId = ${comment.id} AND action = 'like' LIMIT 1
-          `
-          if (!existingLike.length) {
-            await prisma.$executeRaw`UPDATE share_comments SET likes = likes + 1 WHERE id = ${comment.id}`
-            await prisma.$executeRaw`
-              INSERT INTO ai_interactions (targetType, targetId, action, aiUserId, createdAt)
-              VALUES ('share_comment', ${comment.id}, 'like', ${aiUserId}, NOW())
-            `
-          }
-        }
-
-        // 自动回复
-        if (shouldAIReply()) {
-          const existingReply = await prisma.$queryRaw<Array<any>>`
-            SELECT * FROM ai_interactions WHERE targetType = 'share_comment' AND targetId = ${comment.id} AND action = 'reply' LIMIT 1
-          `
-          if (!existingReply.length) {
-            const aiResponse = await generateAIReply({
-              content: content.trim(),
-              contentType: 'share_comment',
-              authorName: comment.userName || '用户'
-            })
-            await prisma.$executeRaw`
-              INSERT INTO share_comments (content, userId, shareId, parentId, createdAt, updatedAt)
-              VALUES (${aiResponse.reply}, ${aiUserId}, ${shareId}, ${comment.id}, NOW(), NOW())
-            `
-            await prisma.$executeRaw`
-              INSERT INTO ai_interactions (targetType, targetId, action, content, aiUserId, createdAt)
-              VALUES ('share_comment', ${comment.id}, 'reply', ${aiResponse.reply}, ${aiUserId}, NOW())
-            `
-          }
-        }
-      } catch (err) {
-        console.error('AI 互动失败:', err)
-      }
-    }
-    doAIInteract()
 
     return NextResponse.json({ comment })
   } catch (error: any) {

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { uploadImage, parseBase64Image, isR2Configured } from '@/lib/r2'
-import { generateAIReply, shouldAIReply, shouldAILike } from '@/lib/ai-service'
 
 // GET /api/shares?type=tool|life|tech_share|qa_help&toolId=&sort=new|hot&page=1&limit=10&search=
 export async function GET(request: NextRequest) {
@@ -273,62 +272,6 @@ export async function POST(request: NextRequest) {
         } : null
       }
     }
-
-    // 触发 AI 自动互动（异步，不阻塞响应）
-    // 直接调用 AI 服务，不走 HTTP 自调用（避免 Vercel WAF 拦截）
-    const doAIInteract = async () => {
-      try {
-        const aiUser = await prisma.$queryRaw<Array<any>>`SELECT id FROM users WHERE username = 'AI助手' LIMIT 1`
-        if (!aiUser.length) return
-        const aiUserId = aiUser[0].id
-        const targetId = share.id
-        const authorName = (shareWithData as any[])[0]?.userName || '用户'
-
-        // 自动点赞
-        if (shouldAILike()) {
-          const existingLike = await prisma.$queryRaw<Array<any>>`
-            SELECT * FROM ai_interactions 
-            WHERE targetType = 'share' AND targetId = ${targetId} AND action = 'like'
-            LIMIT 1
-          `
-          if (!existingLike.length) {
-            await prisma.$executeRaw`UPDATE shares SET likes = likes + 1 WHERE id = ${targetId}`
-            await prisma.$executeRaw`
-              INSERT INTO ai_interactions (targetType, targetId, action, aiUserId, createdAt)
-              VALUES ('share', ${targetId}, 'like', ${aiUserId}, NOW())
-            `
-          }
-        }
-
-        // 自动回复
-        if (shouldAIReply()) {
-          const existingReply = await prisma.$queryRaw<Array<any>>`
-            SELECT * FROM ai_interactions 
-            WHERE targetType = 'share' AND targetId = ${targetId} AND action = 'reply'
-            LIMIT 1
-          `
-          if (!existingReply.length) {
-            const aiResponse = await generateAIReply({
-              content: content.trim(),
-              contentType: 'share',
-              authorName,
-              context: (shareWithData as any[])[0]?.toolName || undefined
-            })
-            await prisma.$executeRaw`
-              INSERT INTO share_comments (content, userId, shareId, createdAt, updatedAt)
-              VALUES (${aiResponse.reply}, ${aiUserId}, ${targetId}, NOW(), NOW())
-            `
-            await prisma.$executeRaw`
-              INSERT INTO ai_interactions (targetType, targetId, action, content, aiUserId, createdAt)
-              VALUES ('share', ${targetId}, 'reply', ${aiResponse.reply}, ${aiUserId}, NOW())
-            `
-          }
-        }
-      } catch (err) {
-        console.error('AI 互动失败:', err)
-      }
-    }
-    doAIInteract()
 
     return NextResponse.json({ share: formattedShare }, { status: 201 })
   } catch (error: any) {
