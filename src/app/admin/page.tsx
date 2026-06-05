@@ -771,12 +771,12 @@ export default function AdminPage() {
                           {getStatusBadge(tool.status)}
                           <span className="text-gray-300">|</span>
                           {tool.source === 'user' ? (
-                            <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs rounded-full whitespace-nowrap">用户提交</span>
+                            <span className="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs rounded-full whitespace-nowrap flex-shrink-0">用户提交</span>
                           ) : (
-                            <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full whitespace-nowrap">我的工具</span>
+                            <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full whitespace-nowrap flex-shrink-0">我的工具</span>
                           )}
                           {/* 定价类型 */}
-                          <span className={`px-2 py-0.5 text-xs rounded-full whitespace-nowrap ${
+                          <span className={`px-2 py-0.5 text-xs rounded-full whitespace-nowrap flex-shrink-0 ${
                             tool.pricingType === 'FREE' ? 'bg-green-100 text-green-700' :
                             tool.pricingType === 'FREEMIUM' ? 'bg-blue-100 text-blue-700' :
                             tool.pricingType === 'PAID' ? 'bg-red-100 text-red-700' :
@@ -1115,11 +1115,11 @@ export default function AdminPage() {
                           <span className="font-medium text-gray-900 text-sm">{comment.userName || '匿名用户'}</span>
                           <span className="text-gray-300">|</span>
                           {comment.sourceType === 'share' ? (
-                            <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs whitespace-nowrap">
+                            <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs whitespace-nowrap flex-shrink-0">
                               用户分享
                             </span>
                           ) : (
-                            <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs whitespace-nowrap">
+                            <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs whitespace-nowrap flex-shrink-0">
                               AI工具
                             </span>
                           )}
@@ -1338,7 +1338,7 @@ export default function AdminPage() {
                             <span className="font-medium text-gray-900">{share.user?.username || '匿名用户'}</span>
                             <span className="text-sm text-gray-500">{timeAgo(share.createdAt)}</span>
                             {/* 类型标签 */}
-                            <span className={`px-2 py-0.5 rounded-full text-xs whitespace-nowrap ${
+                            <span className={`px-2 py-0.5 rounded-full text-xs whitespace-nowrap flex-shrink-0 ${
                               share.type === 'tool' ? 'bg-orange-100 text-orange-700' :
                               share.type === 'tech_share' ? 'bg-sky-100 text-sky-700' :
                               share.type === 'qa_help' ? 'bg-purple-100 text-purple-700' :
@@ -1346,7 +1346,7 @@ export default function AdminPage() {
                             }`}>
                               {share.type === 'tool' ? '工具圈' : share.type === 'tech_share' ? '技术分享' : share.type === 'qa_help' ? '问答求助' : '生活圈'}
                             </span>
-                            <span className={`px-2 py-0.5 rounded-full text-xs whitespace-nowrap ${
+                            <span className={`px-2 py-0.5 rounded-full text-xs whitespace-nowrap flex-shrink-0 ${
                               share.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
                               share.status === 'approved' ? 'bg-green-100 text-green-700' :
                               share.status === 'rejected' ? 'bg-red-100 text-red-700' :
