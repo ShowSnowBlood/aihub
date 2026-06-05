@@ -220,7 +220,7 @@ export default function CreateShareModalNew({ isOpen, onClose, mode = 'life', on
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          type: mode,
+          type: mode === 'tech' ? 'tech_share' : mode === 'qa' ? 'qa_help' : mode,
           content: content.trim(),
           images: isQaMode ? null : (images.length > 0 ? images : null),
           userId: user.id,
