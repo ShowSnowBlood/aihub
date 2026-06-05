@@ -14,10 +14,10 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // 获取用户提交的 share 记录（type='tool' 的提交）
+    // 获取用户提交的所有分享记录
     const shares = await prisma.$queryRawUnsafe(`
       SELECT 
-        id, content, images, status, "createdAt",
+        id, content, images, status, type, "createdAt",
         "submitToolName" as name,
         "submitToolWebsite" as website_url,
         "submitToolDesc" as short_desc,
@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
         "submitToolGithub" as github_url,
         "submitToolLogo" as logo_url
       FROM shares
-      WHERE "userId" = ${parseInt(userId)} AND type = 'tool'
+      WHERE "userId" = ${parseInt(userId)}
       ORDER BY "createdAt" DESC
       LIMIT ${limit} OFFSET ${skip}
     `)
@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
     // 格式化数据
     const formattedTools = (shares as any[]).map(t => ({
       id: Number(t.id),
-      name: t.name || '未命名工具',
+      name: t.name || '未命名',
       slug: 'share-' + t.id,
       shortDesc: t.short_desc || null,
       description: t.content || null,
@@ -42,13 +42,14 @@ export async function GET(request: NextRequest) {
       logoUrl: t.logo_url || null,
       status: t.status || 'pending',
       createdAt: t.createdAt,
+      type: t.type || 'tool',
       category: t.category_name ? { name: t.category_name, slug: '' } : null,
       _count: { comments: 0, shares: 0 }
     }))
 
     // 获取总数
     const totalResult = await prisma.$queryRawUnsafe(`
-      SELECT COUNT(*) as count FROM shares WHERE "userId" = ${parseInt(userId)} AND type = 'tool'
+      SELECT COUNT(*) as count FROM shares WHERE "userId" = ${parseInt(userId)}
     `)
     const total = Number((totalResult as any)[0].count)
 
