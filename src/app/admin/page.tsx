@@ -10,7 +10,7 @@ import {
   ChevronLeft, ChevronRight, RefreshCw,
   ExternalLink, User, Users, Ban, RotateCcw,
   Flag, Shield, Unlock, Info, Mail, Megaphone, Link2,
-  Code, HelpCircle
+  Code, HelpCircle, Box, FileText, BarChart3, Activity
 } from 'lucide-react'
 import { getAvatarInitial } from '@/lib/utils'
 import AnnouncementManager from '@/components/AnnouncementManager'
@@ -109,6 +109,8 @@ export default function AdminPage() {
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
   const [timeFilter, setTimeFilter] = useState<string>('')  // '' | '24h'
   const [toolSearch, setToolSearch] = useState('')
+  const [selectedToolIds, setSelectedToolIds] = useState<Set<number>>(new Set())
+  const [batchProcessing, setBatchProcessing] = useState(false)
   const [toolPage, setToolPage] = useState(1)
   const [toolTotal, setToolTotal] = useState(0)
   const [toolTotalPages, setToolTotalPages] = useState(1)
@@ -132,6 +134,7 @@ export default function AdminPage() {
 
   // 分享管理状态
   const [shares, setShares] = useState<any[]>([])
+  const [selectedShareIds, setSelectedShareIds] = useState<Set<number>>(new Set())
   const [sharesLoading, setSharesLoading] = useState(true)
   const [shareStatusFilter, setShareStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected' | 'suspended'>('pending')
   const [shareTypeFilter, setShareTypeFilter] = useState<'all' | 'tool' | 'life' | 'tech_share' | 'qa_help'>('all')
@@ -421,6 +424,62 @@ export default function AdminPage() {
     }
   }
 
+  // 批量审核工具
+  const handleBatchReviewTools = async (action: 'approve' | 'reject') => {
+    const ids = Array.from(selectedToolIds)
+    if (ids.length === 0) return
+    if (!confirm(`确定要${action === 'approve' ? '通过' : '拒绝'} ${ids.length} 个工具吗？`)) return
+    
+    setBatchProcessing(true)
+    try {
+      const res = await fetch('/api/admin/tools/batch-review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, action })
+      })
+      const data = await res.json()
+      if (res.ok) {
+        alert(data.message)
+        setSelectedToolIds(new Set())
+        loadTools(toolPage)
+      } else {
+        alert(data.error || '操作失败')
+      }
+    } catch {
+      alert('操作失败，请检查网络连接')
+    } finally {
+      setBatchProcessing(false)
+    }
+  }
+
+  // 批量审核分享
+  const handleBatchReviewShares = async (action: 'approve' | 'reject') => {
+    const ids = Array.from(selectedShareIds)
+    if (ids.length === 0) return
+    if (!confirm(`确定要${action === 'approve' ? '通过' : '拒绝'} ${ids.length} 个分享吗？`)) return
+    
+    setBatchProcessing(true)
+    try {
+      const res = await fetch('/api/admin/shares/batch-review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, action })
+      })
+      const data = await res.json()
+      if (res.ok) {
+        alert(data.message)
+        setSelectedShareIds(new Set())
+        loadShares(sharePage)
+      } else {
+        alert(data.error || '操作失败')
+      }
+    } catch {
+      alert('操作失败，请检查网络连接')
+    } finally {
+      setBatchProcessing(false)
+    }
+  }
+
   // 加载举报
   const loadReports = async (p = reportPage) => {
     setReportsLoading(true)
@@ -548,6 +607,9 @@ export default function AdminPage() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* 数据统计 */}
+        <StatsCards />
+        
         {/* Tab 切换 */}
         <div className="flex gap-4 mb-6 overflow-x-auto pb-1 flex-nowrap">
           <button
@@ -732,6 +794,41 @@ export default function AdminPage() {
               </button>
             </div>
 
+            {/* 批量操作栏 */}
+            <div className="flex items-center gap-3 mb-3">
+              <button
+                onClick={() => {
+                  if (selectedToolIds.size === tools.length) {
+                    setSelectedToolIds(new Set())
+                  } else {
+                    setSelectedToolIds(new Set(tools.map(t => t.id)))
+                  }
+                }}
+                className="px-3 py-1.5 text-xs font-medium bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                {selectedToolIds.size === tools.length ? '取消全选' : '全选'}
+              </button>
+              {selectedToolIds.size > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500">已选 {selectedToolIds.size} 项</span>
+                  <button
+                    onClick={() => handleBatchReviewTools('approve')}
+                    disabled={batchProcessing}
+                    className="px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                  >
+                    {batchProcessing ? '处理中...' : '批量通过'}
+                  </button>
+                  <button
+                    onClick={() => handleBatchReviewTools('reject')}
+                    disabled={batchProcessing}
+                    className="px-3 py-1.5 text-xs font-medium bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                  >
+                    {batchProcessing ? '处理中...' : '批量拒绝'}
+                  </button>
+                </div>
+              )}
+            </div>
+
             {/* 工具列表 */}
             {toolsLoading ? (
               <div className="flex justify-center py-20">
@@ -752,6 +849,19 @@ export default function AdminPage() {
                     {/* 卡片主体 */}
                     <div className="p-5">
                     <div className="flex items-start justify-between gap-4">
+                      {/* 复选框 */}
+                      <div className="pt-1 flex-shrink-0">
+                        <input
+                          type="checkbox"
+                          checked={selectedToolIds.has(tool.id)}
+                          onChange={() => {
+                            const next = new Set(selectedToolIds)
+                            next.has(tool.id) ? next.delete(tool.id) : next.add(tool.id)
+                            setSelectedToolIds(next)
+                          }}
+                          className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                        />
+                      </div>
                       <div className="flex-1 min-w-0">
                         {/* 头部 */}
                         <div className="flex items-center gap-3 flex-wrap mb-3">
@@ -1316,6 +1426,41 @@ export default function AdminPage() {
               </div>
             </div>
 
+            {/* 批量操作栏 - 分享 */}
+            <div className="flex items-center gap-3 mb-3">
+              <button
+                onClick={() => {
+                  if (selectedShareIds.size === shares.length) {
+                    setSelectedShareIds(new Set())
+                  } else {
+                    setSelectedShareIds(new Set(shares.map(s => s.id)))
+                  }
+                }}
+                className="px-3 py-1.5 text-xs font-medium bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                {selectedShareIds.size === shares.length ? '取消全选' : '全选'}
+              </button>
+              {selectedShareIds.size > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500">已选 {selectedShareIds.size} 项</span>
+                  <button
+                    onClick={() => handleBatchReviewShares('approve')}
+                    disabled={batchProcessing}
+                    className="px-3 py-1.5 text-xs font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+                  >
+                    {batchProcessing ? '处理中...' : '批量通过'}
+                  </button>
+                  <button
+                    onClick={() => handleBatchReviewShares('reject')}
+                    disabled={batchProcessing}
+                    className="px-3 py-1.5 text-xs font-medium bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                  >
+                    {batchProcessing ? '处理中...' : '批量拒绝'}
+                  </button>
+                </div>
+              )}
+            </div>
+
             {/* 分享列表 */}
             <div className="bg-white rounded-xl shadow-sm overflow-hidden">
               {sharesLoading ? (
@@ -1327,6 +1472,18 @@ export default function AdminPage() {
                   {shares.map((share) => (
                     <div key={share.id} className="p-6 hover:bg-gray-50">
                       <div className="flex items-start gap-4">
+                        <div className="pt-1 flex-shrink-0">
+                          <input
+                            type="checkbox"
+                            checked={selectedShareIds.has(share.id)}
+                            onChange={() => {
+                              const next = new Set(selectedShareIds)
+                              next.has(share.id) ? next.delete(share.id) : next.add(share.id)
+                              setSelectedShareIds(next)
+                            }}
+                            className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                          />
+                        </div>
                         <div 
                           className="w-10 h-10 rounded-full flex items-center justify-center text-white font-medium shrink-0"
                           style={{ background: stringToColor(share.user?.username || '匿') }}
@@ -2172,6 +2329,64 @@ export default function AdminPage() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// 后台数据统计卡片
+function StatsCards() {
+  const [stats, setStats] = useState({
+    tools: 0, shares: 0, users: 0,
+    pendingTools: 0, pendingShares: 0,
+    todayNew: 0
+  })
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const res = await fetch('/api/admin/stats')
+        if (res.ok) {
+          const data = await res.json()
+          setStats(data)
+        }
+      } catch {} finally {
+        setLoading(false)
+      }
+    }
+    fetchStats()
+    const interval = setInterval(fetchStats, 60000)
+    return () => clearInterval(interval)
+  }, [])
+
+  const cards = [
+    { label: '工具总数', value: stats.tools, icon: Box, color: 'bg-blue-500' },
+    { label: '分享总数', value: stats.shares, icon: FileText, color: 'bg-green-500' },
+    { label: '用户总数', value: stats.users, icon: Users, color: 'bg-purple-500' },
+    { label: '待审核工具', value: stats.pendingTools, icon: Clock, color: 'bg-amber-500' },
+    { label: '待审核分享', value: stats.pendingShares, icon: Clock, color: 'bg-orange-500' },
+    { label: '今日新增', value: stats.todayNew, icon: Activity, color: 'bg-rose-500' },
+  ]
+
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+      {cards.map((card) => (
+        <div key={card.label} className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-medium text-gray-500">{card.label}</span>
+            <div className={`p-1.5 rounded-lg ${card.color} bg-opacity-10`}>
+              <card.icon className={`w-4 h-4 ${card.color.replace('bg-', 'text-')}`} />
+            </div>
+          </div>
+          <p className="text-2xl font-bold text-gray-900">
+            {loading ? (
+              <span className="inline-block w-8 h-5 bg-gray-200 rounded animate-pulse" />
+            ) : (
+              card.value.toLocaleString()
+            )}
+          </p>
+        </div>
+      ))}
     </div>
   )
 }
