@@ -310,15 +310,11 @@ export default async function LeaderboardPage({ searchParams }: Props) {
                     {index === 0 ? <Crown className="w-6 h-6" /> : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index + 1}`}
                   </div>
 
-                  {/* Logo */}
-                  <div className="w-10 h-10 flex items-center justify-center bg-cyber-muted border border-cyber-border clip-chamfer-sm flex-shrink-0 overflow-hidden">
-                    {item.logoUrl ? (
-                      <img src={item.logoUrl} alt="" className="w-full h-full object-contain" />
-                    ) : (
-                      <span className="text-lg font-bold text-neon-cyan font-orbitron">
-                        {item.name?.charAt(0).toUpperCase() || '?'}
-                      </span>
-                    )}
+                  {/* Logo - 统一首字母 */}
+                  <div className="w-10 h-10 flex items-center justify-center bg-neon-cyan/10 border border-neon-cyan/30 clip-chamfer-sm flex-shrink-0">
+                    <span className="text-lg font-bold text-neon-cyan font-orbitron">
+                      {item.name?.charAt(0).toUpperCase() || '?'}
+                    </span>
                   </div>
 
                   {/* 信息 */}
@@ -417,15 +413,11 @@ export default async function LeaderboardPage({ searchParams }: Props) {
                       {index === 0 ? <Flame className="w-6 h-6 text-orange-500" /> : `#${index + 1}`}
                     </div>
 
-                    {/* Logo */}
-                    <div className="w-10 h-10 flex items-center justify-center bg-cyber-muted border border-cyber-border clip-chamfer-sm flex-shrink-0 overflow-hidden">
-                      {item.logoUrl ? (
-                        <img src={item.logoUrl} alt="" className="w-full h-full object-contain" />
-                      ) : (
-                        <span className="text-lg font-bold text-neon-cyan font-orbitron">
-                          {item.name?.charAt(0).toUpperCase() || '?'}
-                        </span>
-                      )}
+                    {/* Logo - 统一首字母 */}
+                    <div className="w-10 h-10 flex items-center justify-center bg-neon-cyan/10 border border-neon-cyan/30 clip-chamfer-sm flex-shrink-0">
+                      <span className="text-lg font-bold text-neon-cyan font-orbitron">
+                        {item.name?.charAt(0).toUpperCase() || '?'}
+                      </span>
                     </div>
 
                     {/* 信息 */}
