@@ -21,9 +21,9 @@ interface Props {
 }
 
 const TAB_CONFIG = {
-  shares: { label: '热门分享', icon: Flame, color: 'neon-green', activeBg: 'bg-neon-green text-cyber-background shadow-neon' },
-  users: { label: '活跃用户', icon: Users, color: 'neon-magenta', activeBg: 'bg-neon-magenta/80 text-cyber-background shadow-neon-secondary' },
-  trending: { label: '趋势上升', icon: TrendingUp, color: 'neon-green/80', activeBg: 'bg-neon-green/80 text-cyber-background shadow-neon' },
+  shares: { label: '热门分享', icon: Flame, color: 'from-neon-green to-emerald-500', activeBg: 'bg-gradient-to-r from-neon-green to-emerald-500 text-cyber-background shadow-[0_0_15px_rgba(0,255,136,0.5)]' },
+  users: { label: '活跃用户', icon: Users, color: 'from-neon-magenta to-pink-600', activeBg: 'bg-gradient-to-r from-neon-magenta to-pink-600 text-cyber-background shadow-[0_0_15px_rgba(255,0,255,0.5)]' },
+  trending: { label: '趋势上升', icon: TrendingUp, color: 'from-neon-cyan to-blue-500', activeBg: 'bg-gradient-to-r from-neon-cyan to-blue-500 text-cyber-background shadow-[0_0_15px_rgba(0,212,255,0.5)]' },
 } as const
 
 type TabKey = keyof typeof TAB_CONFIG
@@ -205,21 +205,29 @@ export default async function LeaderboardPage({ searchParams }: Props) {
 
       <section className="pb-24">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          {/* Tab 切换 */}
-          <div className="bg-cyber-card border border-cyber-border clip-chamfer p-2 mb-8">
-            <div className="flex gap-1 overflow-x-auto scrollbar-none">
+          {/* Tab 切换 - 霓虹渐变按钮 */}
+          <div className="bg-cyber-card/50 border border-cyber-border clip-chamfer p-1.5 mb-8">
+            <div className="flex gap-1.5 overflow-x-auto scrollbar-none">
               {(Object.entries(TAB_CONFIG) as [TabKey, typeof config][]).map(([key, item]) => (
                 <Link
                   key={key}
                   href={`/leaderboard?tab=${key}`}
-                  className={`flex-shrink-0 md:flex-1 whitespace-nowrap flex items-center justify-center gap-2 px-4 py-3 clip-chamfer-sm text-sm font-mono uppercase tracking-wider transition-all duration-300 ${
+                  className={`flex-shrink-0 md:flex-1 whitespace-nowrap flex items-center justify-center gap-2 px-5 py-3 clip-chamfer-sm text-sm font-mono uppercase tracking-wider transition-all duration-300 relative overflow-hidden group ${
                     validTab === key
-                      ? item.activeBg + ' font-bold'
-                      : 'text-cyber-muted-foreground hover:text-cyber-foreground hover:bg-cyber-muted/30'
+                      ? item.activeBg + ' font-bold scale-[1.02]'
+                      : 'text-cyber-muted-foreground hover:text-cyber-foreground hover:bg-cyber-muted/50 border border-transparent hover:border-cyber-border'
                   }`}
                 >
-                  <item.icon className="w-4 h-4" />
+                  {/* 悬停光效 */}
+                  {validTab !== key && (
+                    <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
+                  )}
+                  <item.icon className={`w-4 h-4 ${validTab === key ? 'drop-shadow-[0_0_4px_rgba(255,255,255,0.5)]' : ''}`} />
                   {item.label}
+                  {/* 活跃指示线 */}
+                  {validTab === key && (
+                    <span className="absolute bottom-0 left-2 right-2 h-0.5 bg-white/60 rounded-full shadow-[0_0_6px_rgba(255,255,255,0.4)]" />
+                  )}
                 </Link>
               ))}
             </div>
@@ -244,24 +252,43 @@ export default async function LeaderboardPage({ searchParams }: Props) {
               <Link
                 key={item.id}
                 href={`/share/${item.id}`}
-                className={`block bg-cyber-card border ${getRankBg(index)} clip-chamfer p-4 hover:bg-cyber-muted/50 transition-all duration-200 group`}
+                className={`block bg-cyber-card border ${getRankBg(index)} clip-chamfer p-4 hover:bg-cyber-muted/50 hover:scale-[1.01] transition-all duration-200 group`}
               >
                 <div className="flex items-center gap-4">
-                  {/* 排名 */}
-                  <div className={`w-10 h-10 flex items-center justify-center font-orbitron font-bold text-lg ${getRankColor(index)} flex-shrink-0`}>
-                    {index === 0 ? <Crown className="w-6 h-6" /> : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index + 1}`}
+                  {/* 排名 - 金牌样式 */}
+                  <div className={`w-10 h-10 flex items-center justify-center font-orbitron font-bold ${getRankColor(index)} flex-shrink-0 ${index < 3 ? 'drop-shadow-[0_0_8px_rgba(255,215,0,0.3)]' : ''}`}>
+                    {index === 0 ? (
+                      <div className="relative">
+                        <Crown className="w-7 h-7 text-yellow-400 drop-shadow-[0_0_6px_rgba(250,204,21,0.8)]" />
+                        <span className="absolute -top-1 -right-1 text-[8px] font-bold text-yellow-500">1</span>
+                      </div>
+                    ) : index === 1 ? (
+                      <div className="relative">
+                        <span className="text-2xl font-orbitron font-bold text-gray-300 drop-shadow-[0_0_4px_rgba(209,213,219,0.4)]">2</span>
+                        <span className="absolute -top-0.5 -right-2 text-[8px]">🥈</span>
+                      </div>
+                    ) : index === 2 ? (
+                      <div className="relative">
+                        <span className="text-2xl font-orbitron font-bold text-amber-600 drop-shadow-[0_0_4px_rgba(217,119,6,0.4)]">3</span>
+                        <span className="absolute -top-0.5 -right-2 text-[8px]">🥉</span>
+                      </div>
+                    ) : (
+                      <span className={`text-lg font-orbitron font-bold ${getRankColor(index)}`}>
+                        #{index + 1}
+                      </span>
+                    )}
                   </div>
 
                   {/* 内容 */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
+                    <div className="flex items-center gap-2 mb-1.5">
                       {item.user?.avatarUrl ? (
-                        <div className="w-6 h-6 clip-chamfer-sm overflow-hidden flex-shrink-0 border border-cyber-border">
+                        <div className="w-5 h-5 clip-chamfer-sm overflow-hidden flex-shrink-0 border border-cyber-border">
                           <img src={item.user.avatarUrl} alt="" className="w-full h-full object-cover" />
                         </div>
                       ) : (
                         <div
-                          className="w-6 h-6 flex items-center justify-center text-[10px] font-bold text-cyber-background clip-chamfer-sm flex-shrink-0"
+                          className="w-5 h-5 flex items-center justify-center text-[8px] font-bold text-cyber-background clip-chamfer-sm flex-shrink-0"
                           style={{ background: `linear-gradient(135deg, ${stringToColor(item.user?.username || '?')}, #00d4ff)` }}
                         >
                           {item.user?.username?.charAt(0).toUpperCase() || '?'}
@@ -269,34 +296,39 @@ export default async function LeaderboardPage({ searchParams }: Props) {
                       )}
                       <span className="text-xs text-cyber-muted-foreground font-mono truncate">{item.user?.username}</span>
                       {item.type && (
-                        <span className="text-[10px] px-1.5 py-0.5 bg-cyber-muted/50 text-cyber-muted-foreground font-mono whitespace-nowrap flex-shrink-0 clip-chamfer-sm">
+                        <span className={`text-[9px] px-1.5 py-0.5 font-mono whitespace-nowrap flex-shrink-0 clip-chamfer-sm font-medium ${
+                          item.type === 'tool' ? 'text-orange-400 bg-orange-500/10 border border-orange-500/20'
+                          : item.type === 'tech_share' ? 'text-neon-cyan bg-cyan-500/10 border border-cyan-500/20'
+                          : item.type === 'qa_help' ? 'text-neon-magenta bg-magenta-500/10 border border-magenta-500/20'
+                          : 'text-neon-green bg-green-500/10 border border-green-500/20'
+                        }`}>
                           {getTypeLabel(item.type)}
                         </span>
                       )}
-                      <span className="text-[10px] text-cyber-muted-foreground/50 font-mono ml-auto">
+                      <span className="text-[10px] text-cyber-muted-foreground/40 font-mono ml-auto">
                         {timeAgo(item.createdAt)}
                       </span>
                     </div>
-                    <p className="text-sm text-cyber-foreground line-clamp-1 group-hover:text-neon-green transition-colors font-mono">
+                    <p className="text-sm text-cyber-foreground line-clamp-1 group-hover:text-neon-green transition-colors font-mono leading-relaxed">
                       {item.content}
                     </p>
                     {item.tool?.name && (
-                      <p className="text-xs text-cyber-muted-foreground/60 mt-0.5 font-mono">
-                        关联工具: <span className="text-neon-cyan">{item.tool.name}</span>
+                      <p className="text-xs text-cyber-muted-foreground/50 mt-1 font-mono">
+                        关联 <span className="text-neon-cyan border-b border-neon-cyan/30 hover:border-neon-cyan transition-colors">{item.tool.name}</span>
                       </p>
                     )}
                   </div>
 
                   {/* 数据 */}
-                  <div className="flex items-center gap-3 text-xs text-cyber-muted-foreground flex-shrink-0">
-                    <span className="flex items-center gap-1">
-                      <Heart className="w-3.5 h-3.5 text-neon-green" />
-                      {formatNumber(item.likes)}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <MessageCircle className="w-3.5 h-3.5 text-neon-cyan" />
-                      {item.commentsCount}
-                    </span>
+                  <div className="flex items-center gap-2.5 text-xs flex-shrink-0">
+                    <div className="flex items-center gap-1 px-2 py-1 bg-neon-green/5 border border-neon-green/20 clip-chamfer-sm">
+                      <Heart className="w-3 h-3 text-neon-green" />
+                      <span className="text-cyber-muted-foreground font-mono font-medium">{formatNumber(item.likes)}</span>
+                    </div>
+                    <div className="flex items-center gap-1 px-2 py-1 bg-neon-cyan/5 border border-neon-cyan/20 clip-chamfer-sm">
+                      <MessageCircle className="w-3 h-3 text-neon-cyan" />
+                      <span className="text-cyber-muted-foreground font-mono font-medium">{item.commentsCount}</span>
+                    </div>
                   </div>
                 </div>
               </Link>
@@ -306,17 +338,34 @@ export default async function LeaderboardPage({ searchParams }: Props) {
               <Link
                 key={item.id}
                 href={`/u/${item.id}`}
-                className={`block bg-cyber-card border ${getRankBg(index)} clip-chamfer p-4 hover:bg-cyber-muted/50 transition-all duration-200 group`}
+                className={`block bg-cyber-card border ${getRankBg(index)} clip-chamfer p-4 hover:bg-cyber-muted/50 hover:scale-[1.01] transition-all duration-200 group`}
               >
                 <div className="flex items-center gap-4">
                   {/* 排名 */}
-                  <div className={`w-10 h-10 flex items-center justify-center font-orbitron font-bold text-lg ${getRankColor(index)} flex-shrink-0`}>
-                    {index === 0 ? <Crown className="w-6 h-6" /> : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index + 1}`}
+                  <div className={`w-10 h-10 flex items-center justify-center font-orbitron font-bold ${getRankColor(index)} flex-shrink-0 ${index < 3 ? 'drop-shadow-[0_0_8px_rgba(255,215,0,0.3)]' : ''}`}>
+                    {index === 0 ? (
+                      <div className="relative">
+                        <Crown className="w-7 h-7 text-yellow-400 drop-shadow-[0_0_6px_rgba(250,204,21,0.8)]" />
+                        <span className="absolute -top-1 -right-1 text-[8px] font-bold text-yellow-500">1</span>
+                      </div>
+                    ) : index === 1 ? (
+                      <div className="relative">
+                        <span className="text-2xl font-orbitron font-bold text-gray-300 drop-shadow-[0_0_4px_rgba(209,213,219,0.4)]">2</span>
+                        <span className="absolute -top-0.5 -right-2 text-[8px]">🥈</span>
+                      </div>
+                    ) : index === 2 ? (
+                      <div className="relative">
+                        <span className="text-2xl font-orbitron font-bold text-amber-600 drop-shadow-[0_0_4px_rgba(217,119,6,0.4)]">3</span>
+                        <span className="absolute -top-0.5 -right-2 text-[8px]">🥉</span>
+                      </div>
+                    ) : (
+                      <span className="text-lg font-orbitron font-bold text-cyber-muted-foreground">#{index + 1}</span>
+                    )}
                   </div>
 
                   {/* 头像 */}
                   {item.avatarUrl ? (
-                    <div className="w-10 h-10 clip-chamfer-sm overflow-hidden flex-shrink-0 border border-cyber-border">
+                    <div className="w-10 h-10 clip-chamfer-sm overflow-hidden flex-shrink-0 border-2 border-neon-green/30 shadow-[0_0_8px_rgba(0,255,136,0.15)]">
                       <img src={item.avatarUrl} alt="" className="w-full h-full object-cover" />
                     </div>
                   ) : (
@@ -333,24 +382,25 @@ export default async function LeaderboardPage({ searchParams }: Props) {
                     <h3 className="text-sm font-orbitron font-bold text-cyber-foreground group-hover:text-neon-green transition-colors">
                       {item.username}
                     </h3>
-                    <p className="text-xs text-cyber-muted-foreground/60 mt-0.5 font-mono">
+                    <p className="text-xs text-cyber-muted-foreground/50 mt-0.5 font-mono">
                       {item.joinDate && `加入于 ${new Date(item.joinDate).toLocaleDateString('zh-CN')}`}
                     </p>
                   </div>
 
                   {/* 数据 */}
-                  <div className="flex items-center gap-3 text-xs text-cyber-muted-foreground flex-shrink-0">
-                    <span className="flex items-center gap-1">
-                      <Flame className="w-3.5 h-3.5 text-orange-400" />
-                      {formatNumber(Number(item.shareCount))} 分享
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Heart className="w-3.5 h-3.5 text-neon-green" />
-                      {formatNumber(Number(item.totalLikes))}
-                    </span>
-                    <span className="text-cyber-muted-foreground/50">
-                      <MessageCircle className="w-3.5 h-3.5 inline text-neon-cyan" /> {item.commentCount || 0}
-                    </span>
+                  <div className="flex items-center gap-2.5 text-xs flex-shrink-0">
+                    <div className="flex items-center gap-1 px-2 py-1 bg-orange-500/5 border border-orange-500/20 clip-chamfer-sm">
+                      <Flame className="w-3 h-3 text-orange-400" />
+                      <span className="text-cyber-muted-foreground font-mono font-medium">{formatNumber(Number(item.shareCount))}</span>
+                    </div>
+                    <div className="flex items-center gap-1 px-2 py-1 bg-neon-green/5 border border-neon-green/20 clip-chamfer-sm">
+                      <Heart className="w-3 h-3 text-neon-green" />
+                      <span className="text-cyber-muted-foreground font-mono font-medium">{formatNumber(Number(item.totalLikes))}</span>
+                    </div>
+                    <div className="flex items-center gap-1 px-2 py-1 bg-neon-cyan/5 border border-neon-cyan/20 clip-chamfer-sm">
+                      <MessageCircle className="w-3 h-3 text-neon-cyan" />
+                      <span className="text-cyber-muted-foreground font-mono font-medium">{item.commentCount || 0}</span>
+                    </div>
                   </div>
                 </div>
               </Link>
@@ -371,43 +421,46 @@ export default async function LeaderboardPage({ searchParams }: Props) {
                 <Link
                   key={item.id}
                   href={`/tools/${item.slug}`}
-                  className={`block bg-cyber-card border ${getRankBg(index)} clip-chamfer p-4 hover:bg-cyber-muted/50 transition-all duration-200 group`}
+                  className={`block bg-cyber-card border ${getRankBg(index)} clip-chamfer p-4 hover:bg-cyber-muted/50 hover:scale-[1.01] transition-all duration-200 group`}
                 >
                   <div className="flex items-center gap-4">
-                    {/* 排名 */}
-                    <div className={`w-10 h-10 flex items-center justify-center font-orbitron font-bold text-lg ${getRankColor(index)} flex-shrink-0`}>
-                      {index === 0 ? <Flame className="w-6 h-6 text-orange-500" /> : `#${index + 1}`}
+                    <div className={`w-10 h-10 flex items-center justify-center font-orbitron font-bold ${getRankColor(index)} flex-shrink-0 ${index < 3 ? 'drop-shadow-[0_0_8px_rgba(255,215,0,0.3)]' : ''}`}>
+                      {index === 0 ? (
+                        <Flame className="w-7 h-7 text-orange-500 drop-shadow-[0_0_6px_rgba(249,115,22,0.6)]" />
+                      ) : index === 1 ? (
+                        <span className="text-2xl font-orbitron font-bold text-gray-300">2🥈</span>
+                      ) : index === 2 ? (
+                        <span className="text-2xl font-orbitron font-bold text-amber-600">3🥉</span>
+                      ) : (
+                        <span className="text-lg font-orbitron font-bold text-cyber-muted-foreground">#{index + 1}</span>
+                      )}
                     </div>
-
-                    {/* Logo - 统一首字母 */}
-                    <div className="w-10 h-10 flex items-center justify-center bg-neon-cyan/10 border border-neon-cyan/30 clip-chamfer-sm flex-shrink-0">
-                      <span className="text-lg font-bold text-neon-cyan font-orbitron">
+                    <div className="w-10 h-10 flex items-center justify-center bg-gradient-to-br from-neon-cyan/20 to-blue-500/20 border border-neon-cyan/30 clip-chamfer-sm flex-shrink-0 shadow-[0_0_8px_rgba(0,212,255,0.1)]">
+                      <span className="text-lg font-bold text-neon-cyan font-orbitron drop-shadow-[0_0_4px_rgba(0,212,255,0.3)]">
                         {item.name?.charAt(0).toUpperCase() || '?'}
                       </span>
                     </div>
-
-                    {/* 信息 */}
                     <div className="flex-1 min-w-0">
                       <h3 className="text-sm font-orbitron font-bold text-cyber-foreground group-hover:text-neon-green transition-colors truncate">
                         {item.name}
                       </h3>
                       {item.shortDesc && (
-                        <p className="text-xs text-cyber-muted-foreground/60 mt-0.5 font-mono truncate">{item.shortDesc}</p>
+                        <p className="text-xs text-cyber-muted-foreground/50 mt-0.5 font-mono truncate">{item.shortDesc}</p>
                       )}
                     </div>
-
-                    {/* 增长数据 */}
-                    <div className="flex items-center gap-3 text-xs flex-shrink-0">
-                      <span className="flex items-center gap-1 text-cyber-muted-foreground">
-                        <Eye className="w-3.5 h-3.5 text-neon-cyan" />
-                        {formatNumber(Number(item.viewCount))}
-                      </span>
-                      <span className={`flex items-center gap-1 font-mono font-bold ${
-                        growth > 0 ? 'text-neon-green' : growth < 0 ? 'text-neon-magenta' : 'text-cyber-muted-foreground'
+                    <div className="flex items-center gap-2.5 text-xs flex-shrink-0">
+                      <div className="flex items-center gap-1 px-2 py-1 bg-neon-cyan/5 border border-neon-cyan/20 clip-chamfer-sm">
+                        <Eye className="w-3 h-3 text-neon-cyan" />
+                        <span className="text-cyber-muted-foreground font-mono font-medium">{formatNumber(Number(item.viewCount))}</span>
+                      </div>
+                      <div className={`flex items-center gap-1 px-2 py-1 clip-chamfer-sm font-mono font-bold ${
+                        growth > 0 ? 'bg-neon-green/10 border border-neon-green/30 text-neon-green' 
+                        : growth < 0 ? 'bg-neon-magenta/10 border border-neon-magenta/30 text-neon-magenta'
+                        : 'bg-cyber-muted/30 border border-cyber-border text-cyber-muted-foreground'
                       }`}>
-                        {growth > 0 ? <ArrowUp className="w-3.5 h-3.5" /> : growth < 0 ? <ArrowDown className="w-3.5 h-3.5" /> : <Minus className="w-3.5 h-3.5" />}
+                        {growth > 0 ? <ArrowUp className="w-3 h-3" /> : growth < 0 ? <ArrowDown className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
                         {growth > 0 ? '+' : ''}{growth}%
-                      </span>
+                      </div>
                     </div>
                   </div>
                 </Link>
