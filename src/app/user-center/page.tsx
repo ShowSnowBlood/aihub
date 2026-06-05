@@ -2153,26 +2153,28 @@ export default function UserCenterPage() {
                                         </p>
                                       )}
                                     </div>
-                                    {!n.isRead && (
+                                    <div className="flex items-center gap-0.5 flex-shrink-0">
+                                      {!n.isRead && (
+                                        <button
+                                          onClick={() => handleMarkNotifRead(n.id)}
+                                          disabled={notifMarking === n.id}
+                                          className="p-1 text-cyber-muted-foreground hover:text-neon-green opacity-0 group-hover:opacity-100 transition-all"
+                                        >
+                                          {notifMarking === n.id ? (
+                                            <Loader2 className="w-3 h-3 animate-spin" />
+                                          ) : (
+                                            <Check className="w-3 h-3" />
+                                          )}
+                                        </button>
+                                      )}
                                       <button
-                                        onClick={() => handleMarkNotifRead(n.id)}
-                                        disabled={notifMarking === n.id}
-                                        className="p-1 text-cyber-muted-foreground hover:text-neon-green opacity-0 group-hover:opacity-100 transition-all flex-shrink-0"
+                                        onClick={() => handleDeleteNotif(n.id)}
+                                        className="p-1 text-cyber-muted-foreground hover:text-neon-magenta opacity-0 group-hover:opacity-100 transition-all"
+                                        title="删除"
                                       >
-                                        {notifMarking === n.id ? (
-                                          <Loader2 className="w-3 h-3 animate-spin" />
-                                        ) : (
-                                          <Check className="w-3 h-3" />
-                                        )}
+                                        <Trash2 className="w-3 h-3" />
                                       </button>
-                                    )}
-                                    <button
-                                      onClick={() => handleDeleteNotif(n.id)}
-                                      className="p-1 text-cyber-muted-foreground hover:text-neon-magenta opacity-0 group-hover:opacity-100 transition-all flex-shrink-0"
-                                      title="删除"
-                                    >
-                                      <Trash2 className="w-3 h-3" />
-                                    </button>
+                                    </div>
                                   </div>
                                   <div className="flex items-center gap-2 mt-1">
                                     <span className="flex items-center gap-1 text-[10px] text-cyber-muted-foreground font-mono">
