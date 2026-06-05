@@ -271,23 +271,52 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* 公告轮播 */}
+      {/* 公告轮播 - 赛博朋克终端风格 */}
       {announcements.length > 0 && (
-        <section className="py-3 bg-gradient-to-r from-neon-magenta/5 via-neon-cyan/5 to-neon-green/5 border-y border-cyber-border">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex items-center gap-4 overflow-x-auto scrollbar-none">
-              <span className="flex-shrink-0 text-xs font-bold font-orbitron text-neon-magenta uppercase tracking-wider border-r border-cyber-border pr-4">
-                📢 公告
-              </span>
-              <div className="flex gap-6">
-                {announcements.map((a) => (
-                  <span key={a.id} className="flex items-center gap-2 text-sm text-cyber-muted-foreground font-mono whitespace-nowrap">
-                    <span className={`w-1.5 h-1.5 rounded-full ${
-                      a.type === 'update' ? 'bg-neon-green' : a.type === 'event' ? 'bg-neon-magenta' : a.type === 'notice' ? 'bg-neon-yellow' : 'bg-neon-cyan'
-                    }`} />
-                    {a.text}
-                  </span>
-                ))}
+        <section className="relative overflow-hidden border-b border-cyber-border">
+          {/* 背景扫描线 */}
+          <div className="absolute inset-0 bg-gradient-to-r from-neon-magenta/[0.02] via-transparent to-neon-cyan/[0.02]" />
+          <div className="absolute inset-0" style={{ background: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.02) 2px, rgba(255,255,255,0.02) 4px)' }} />
+          
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 relative">
+            <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+              {/* 公告标题 - 终端标签 */}
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <div className="flex gap-1">
+                  <span className="w-2 h-2 rounded-full bg-neon-magenta shadow-[0_0_4px_rgba(255,0,255,0.5)]" />
+                  <span className="w-2 h-2 rounded-full bg-neon-cyan shadow-[0_0_4px_rgba(0,212,255,0.5)]" />
+                  <span className="w-2 h-2 rounded-full bg-neon-green shadow-[0_0_4px_rgba(0,255,136,0.5)]" />
+                </div>
+                <span className="text-[10px] font-bold font-orbitron text-cyber-muted-foreground uppercase tracking-[0.2em] ml-2">
+                  SYS_ANNOUNCE
+                </span>
+              </div>
+              
+              {/* 公告列表 - 横向滚动 */}
+              <div className="flex-1 flex gap-3 overflow-x-auto scrollbar-none -mx-2 px-2">
+                {announcements.map((a, i) => {
+                  const typeConfig = {
+                    update: { badge: '更新', color: 'border-neon-green/30 text-neon-green bg-neon-green/5' },
+                    event: { badge: '活动', color: 'border-neon-magenta/30 text-neon-magenta bg-neon-magenta/5' },
+                    notice: { badge: '通知', color: 'border-neon-yellow/30 text-neon-yellow bg-neon-yellow/5' },
+                    info: { badge: '资讯', color: 'border-neon-cyan/30 text-neon-cyan bg-neon-cyan/5' },
+                  }[a.type] || { badge: '公告', color: 'border-neon-cyan/30 text-neon-cyan bg-neon-cyan/5' }
+                  
+                  return (
+                    <div
+                      key={a.id}
+                      className={`flex items-center gap-3 px-4 py-2.5 border ${typeConfig.color} flex-shrink-0`}
+                      style={{ clipPath: 'polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px))' }}
+                    >
+                      <span className="text-[9px] font-bold font-mono uppercase tracking-wider px-1.5 py-0.5 bg-current/10 clip-chamfer-sm">
+                        {typeConfig.badge}
+                      </span>
+                      <span className="text-sm text-cyber-foreground/80 font-mono whitespace-nowrap">
+                        {a.text}
+                      </span>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           </div>
