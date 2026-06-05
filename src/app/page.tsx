@@ -328,9 +328,9 @@ export default async function HomePage() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <h3 className="font-orbitron font-bold text-cyber-foreground truncate group-hover:text-neon-green transition-colors">
-                          {share.tool?.name || share.submitToolName || (share.type === 'life' ? '生活分享' : '工具分享')}
+                          {share.tool?.name || share.submitToolName || (share.type === 'life' ? '生活动态' : share.type === 'tech_share' ? '技术分享' : share.type === 'qa_help' ? '问答求助' : '工具分享')}
                         </h3>
-                        <p className="text-xs text-cyber-muted-foreground truncate font-mono">{share.tool?.shortDesc || share.tool?.description?.slice(0, 30) || share.submitToolDesc || (share.type === 'life' ? '来自社区的精彩分享' : '用户提交的AI工具')}</p>
+                        <p className="text-xs text-cyber-muted-foreground truncate font-mono">{share.tool?.shortDesc || share.tool?.description?.slice(0, 30) || share.submitToolDesc || (share.type === 'life' ? '来自社区的精彩分享' : share.type === 'tech_share' ? '技术交流与分享' : share.type === 'qa_help' ? '社区问答求助' : '用户提交的AI工具')}</p>
                       </div>
                     </div>
                   </div>

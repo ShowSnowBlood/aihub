@@ -44,7 +44,7 @@ export async function checkAndUnlock(userId: number) {
       ),
       // 生活圈动态
       prisma.$queryRawUnsafe<Array<any>>(
-        `SELECT COUNT(*) as total FROM shares WHERE "userId" = $1 AND type = 'life' AND status = 'approved'`,
+        `SELECT COUNT(*) as total FROM shares WHERE "userId" = $1 AND type IN ('life', 'tech_share', 'qa_help') AND status = 'approved'`,
         userId
       ),
       // 评论数

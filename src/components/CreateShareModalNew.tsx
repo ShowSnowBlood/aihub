@@ -7,7 +7,7 @@ import { X, Image as ImageIcon, Send, Loader2, GripVertical } from 'lucide-react
 interface Props {
   isOpen: boolean
   onClose: () => void
-  mode?: 'tool' | 'life'
+  mode?: 'tool' | 'life' | 'tech' | 'qa'
   onSuccess?: () => void
 }
 

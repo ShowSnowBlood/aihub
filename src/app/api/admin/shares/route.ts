@@ -163,13 +163,15 @@ export async function GET(request: NextRequest) {
     const suspended = Number(statsRows.find(r => r.metric === 'status' && r.value === 'suspended')?.count || 0)
     const toolCount = Number(statsRows.find(r => r.metric === 'type' && r.value === 'tool')?.count || 0)
     const lifeCount = Number(statsRows.find(r => r.metric === 'type' && r.value === 'life')?.count || 0)
+    const techCount = Number(statsRows.find(r => r.metric === 'type' && r.value === 'tech_share')?.count || 0)
+    const qaCount = Number(statsRows.find(r => r.metric === 'type' && r.value === 'qa_help')?.count || 0)
 
     return NextResponse.json({
       shares: formattedShares,
       total,
       page,
       totalPages: Math.ceil(total / limit),
-      stats: { pending, approved, rejected, suspended, total: pending + approved + rejected + suspended, tool: toolCount, life: lifeCount }
+      stats: { pending, approved, rejected, suspended, total: pending + approved + rejected + suspended, tool: toolCount, life: lifeCount, tech: techCount, qa: qaCount }
     })
   } catch (error) {
     console.error('获取分享列表失败:', error)

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { uploadImage, parseBase64Image, isR2Configured } from '@/lib/r2'
 
-// GET /api/shares?type=tool|life&toolId=&sort=new|hot&page=1&limit=10&search=
+// GET /api/shares?type=tool|life|tech_share|qa_help&toolId=&sort=new|hot&page=1&limit=10&search=
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const type = searchParams.get('type') || 'tool'
@@ -20,6 +20,10 @@ export async function GET(request: NextRequest) {
       whereClause += ` AND s.type = 'tool'`
     } else if (type === 'life') {
       whereClause += ` AND s.type = 'life'`
+    } else if (type === 'tech_share') {
+      whereClause += ` AND s.type = 'tech_share'`
+    } else if (type === 'qa_help') {
+      whereClause += ` AND s.type = 'qa_help'`
     }
     if (toolId) {
       whereClause += ` AND s."toolId" = ${parseInt(toolId)}`

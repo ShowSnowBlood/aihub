@@ -22,7 +22,9 @@ import {
   ArrowUpRight,
   Terminal,
   Radio,
-  Cpu
+  Cpu,
+  Code,
+  HelpCircle
 } from 'lucide-react'
 import { getShareImages } from '@/lib/share-image'
 
@@ -214,10 +216,130 @@ async function getLifeShares(sort?: string, search?: string) {
     })
 }
 
+async function getTechShares(sort?: string, search?: string) {
+  const whereConditions: any = {
+    status: 'approved',
+    type: 'tech_share'
+  }
+
+  if (search) {
+    const searchLower = search.toLowerCase()
+    whereConditions.OR = [
+      { content: { contains: searchLower, mode: 'insensitive' } },
+      { user: { username: { contains: searchLower, mode: 'insensitive' } } },
+      { tags: { contains: searchLower, mode: 'insensitive' } }
+    ]
+  }
+
+  const shares = await prisma.share.findMany({
+    where: whereConditions,
+    include: {
+      user: {
+        select: { username: true, avatarUrl: true, role: true }
+      },
+      comments: {
+        where: { status: 'approved' },
+        select: { id: true }
+      }
+    },
+    orderBy: [{ user: { role: 'desc' } }, sort === 'hot' || sort === 'mostLiked'
+      ? { likes: 'desc' }
+      : { createdAt: 'desc' }],
+    take: 24
+  })
+
+  const now = new Date()
+  return shares
+    .map((s: any) => ({
+      id: s.id,
+      content: s.content,
+      images: JSON.stringify(getShareImages(s.id, s.images)),
+      video: s.video,
+      likes: s.likes,
+      viewCount: s.viewCount || 0,
+      status: s.status,
+      type: s.type,
+      tags: s.tags,
+      createdAt: s.createdAt,
+      userId: s.userId,
+      pinnedUntil: s.pinnedUntil,
+      userName: s.user?.username,
+      userAvatarUrl: s.user?.avatarUrl,
+      userRole: s.user?.role,
+      commentsCount: s.comments?.length || 0
+    }))
+    .sort((a, b) => {
+      const aPinned = a.pinnedUntil && new Date(a.pinnedUntil) > now ? 1 : 0
+      const bPinned = b.pinnedUntil && new Date(b.pinnedUntil) > now ? 1 : 0
+      return bPinned - aPinned
+    })
+}
+
+async function getQaHelpShares(sort?: string, search?: string) {
+  const whereConditions: any = {
+    status: 'approved',
+    type: 'qa_help'
+  }
+
+  if (search) {
+    const searchLower = search.toLowerCase()
+    whereConditions.OR = [
+      { content: { contains: searchLower, mode: 'insensitive' } },
+      { user: { username: { contains: searchLower, mode: 'insensitive' } } },
+      { tags: { contains: searchLower, mode: 'insensitive' } }
+    ]
+  }
+
+  const shares = await prisma.share.findMany({
+    where: whereConditions,
+    include: {
+      user: {
+        select: { username: true, avatarUrl: true, role: true }
+      },
+      comments: {
+        where: { status: 'approved' },
+        select: { id: true }
+      }
+    },
+    orderBy: [{ user: { role: 'desc' } }, sort === 'hot' || sort === 'mostLiked'
+      ? { likes: 'desc' }
+      : { createdAt: 'desc' }],
+    take: 24
+  })
+
+  const now = new Date()
+  return shares
+    .map((s: any) => ({
+      id: s.id,
+      content: s.content,
+      images: JSON.stringify(getShareImages(s.id, s.images)),
+      video: s.video,
+      likes: s.likes,
+      viewCount: s.viewCount || 0,
+      status: s.status,
+      type: s.type,
+      tags: s.tags,
+      createdAt: s.createdAt,
+      userId: s.userId,
+      pinnedUntil: s.pinnedUntil,
+      userName: s.user?.username,
+      userAvatarUrl: s.user?.avatarUrl,
+      userRole: s.user?.role,
+      commentsCount: s.comments?.length || 0
+    }))
+    .sort((a, b) => {
+      const aPinned = a.pinnedUntil && new Date(a.pinnedUntil) > now ? 1 : 0
+      const bPinned = b.pinnedUntil && new Date(b.pinnedUntil) > now ? 1 : 0
+      return bPinned - aPinned
+    })
+}
+
 async function getStats() {
-  const [toolCount, lifeCount, totalLikes, totalComments] = await Promise.all([
+  const [toolCount, lifeCount, techCount, qaCount, totalLikes, totalComments] = await Promise.all([
     prisma.share.count({ where: { type: 'tool', status: 'approved' } }),
     prisma.share.count({ where: { type: 'life', status: 'approved' } }),
+    prisma.share.count({ where: { type: 'tech_share', status: 'approved' } }),
+    prisma.share.count({ where: { type: 'qa_help', status: 'approved' } }),
     prisma.share.aggregate({ _sum: { likes: true }, where: { status: 'approved' } }),
     prisma.shareComment.count({ where: { status: 'approved' } })
   ])
@@ -225,6 +347,8 @@ async function getStats() {
   return {
     toolCount,
     lifeCount,
+    techCount,
+    qaCount,
     totalLikes: totalLikes._sum.likes || 0,
     totalComments
   }
@@ -263,18 +387,22 @@ export default async function UserSharePage({ searchParams }: UserSharePageProps
   const search = searchParams.search as string | undefined
   const tab = searchParams.tab as string | undefined || 'tool'
   
-  let toolShares: any[] = [], lifeShares: any[] = [], stats: any = { toolCount: 0, lifeCount: 0, totalLikes: 0, totalComments: 0 }, popularTags: any[] = []
+  let toolShares: any[] = [], lifeShares: any[] = [], techShares: any[] = [], qaShares: any[] = [], stats: any = { toolCount: 0, lifeCount: 0, techCount: 0, qaCount: 0, totalLikes: 0, totalComments: 0 }, popularTags: any[] = []
   try {
     const results = await Promise.all([
       getToolShares(sort, search),
       getLifeShares(sort, search),
+      getTechShares(sort, search),
+      getQaHelpShares(sort, search),
       getStats(),
       getPopularTags(),
     ])
     toolShares = results[0]
     lifeShares = results[1]
-    stats = results[2]
-    popularTags = results[3]
+    techShares = results[2]
+    qaShares = results[3]
+    stats = results[4]
+    popularTags = results[5]
   } catch (error) {
     console.error('加载分享数据失败（可能是数据库超限）:', error)
     // 静默失败，页面用空数据渲染
@@ -282,14 +410,17 @@ export default async function UserSharePage({ searchParams }: UserSharePageProps
 
   // 搜索时自动跳转到有结果的圈子
   if (search) {
-    if (tab === 'tool' && toolShares.length === 0 && lifeShares.length > 0) {
-      redirect(`/user-share?tab=life&search=${encodeURIComponent(search)}`)
-    } else if (tab === 'life' && lifeShares.length === 0 && toolShares.length > 0) {
-      redirect(`/user-share?tab=tool&search=${encodeURIComponent(search)}`)
+    const allShares: Record<string, any[]> = { tool: toolShares, life: lifeShares, tech: techShares, qa: qaShares }
+    if (allShares[tab]?.length === 0) {
+      const firstNonEmpty = Object.entries(allShares).find(([, shares]) => shares.length > 0)
+      if (firstNonEmpty) {
+        redirect(`/user-share?tab=${firstNonEmpty[0]}&search=${encodeURIComponent(search)}`)
+      }
     }
   }
 
-  const currentShares = tab === 'tool' ? toolShares : lifeShares
+  const shareMap: Record<string, any[]> = { tool: toolShares, life: lifeShares, tech: techShares, qa: qaShares }
+  const currentShares = shareMap[tab] || toolShares
 
   return (
     <div className="min-h-screen bg-cyber-background">
@@ -309,7 +440,7 @@ export default async function UserSharePage({ searchParams }: UserSharePageProps
               <div className="inline-flex items-center gap-2 px-4 py-2 border border-neon-green/50 bg-neon-green/5 clip-chamfer-sm">
                 <Radio className="w-4 h-4 text-neon-green animate-pulse" />
                 <span className="text-sm font-mono text-neon-green uppercase tracking-wider">
-                  {stats.toolCount + stats.lifeCount} 条分享 · {stats.totalLikes} 次点赞 · {stats.totalComments} 条评论
+                  {stats.toolCount + stats.lifeCount + stats.techCount + stats.qaCount} 条分享 · {stats.totalLikes} 次点赞 · {stats.totalComments} 条评论
                 </span>
               </div>
             </div>
@@ -363,6 +494,36 @@ export default async function UserSharePage({ searchParams }: UserSharePageProps
                     {lifeShares.length}
                   </span>
                 </Link>
+                <Link 
+                  href={`/user-share?tab=tech${sort ? `&sort=${sort}` : ''}${search ? `&search=${encodeURIComponent(search)}` : ''}`}
+                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 clip-chamfer-sm text-sm font-mono uppercase tracking-wider transition-all duration-300 ${
+                    tab === 'tech' 
+                      ? 'bg-neon-green/80 text-cyber-background shadow-neon font-bold' 
+                      : 'text-cyber-muted-foreground hover:text-neon-green hover:bg-neon-green/10'
+                  }`}
+                >
+                  <Code className="w-4 h-4" />
+                  技术分享
+                  <span className={`ml-1 px-2 py-0.5 clip-chamfer-sm text-xs ${tab === 'tech' ? 'bg-cyber-background/20' : 'bg-cyber-muted'}`}>
+                    {techShares.length}
+                  </span>
+                </Link>
+                <Link 
+                  href={`/user-share?tab=qa${sort ? `&sort=${sort}` : ''}${search ? `&search=${encodeURIComponent(search)}` : ''}`}
+                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 clip-chamfer-sm text-sm font-mono uppercase tracking-wider transition-all duration-300 ${
+                    tab === 'qa' 
+                      ? 'bg-neon-magenta/80 text-cyber-background shadow-neon-secondary font-bold' 
+                      : 'text-cyber-muted-foreground hover:text-neon-magenta hover:bg-neon-magenta/10'
+                  }`}
+                >
+                  <HelpCircle className="w-4 h-4" />
+                  问答求助
+                  <span className={`ml-1 px-2 py-0.5 clip-chamfer-sm text-xs ${tab === 'qa' ? 'bg-cyber-background/20' : 'bg-cyber-muted'}`}>
+                    {qaShares.length}
+                  </span>
+                </Link>
+              </div>
+            </div>
               </div>
             </div>
 
@@ -376,7 +537,7 @@ export default async function UserSharePage({ searchParams }: UserSharePageProps
                     type="text"
                     name="search"
                     defaultValue={search || ''}
-                    placeholder={tab === 'tool' ? '搜索工具、体验分享...' : '搜索生活动态...'}
+                    placeholder={tab === 'tool' ? '搜索工具、体验分享...' : tab === 'tech' ? '搜索技术问题...' : tab === 'qa' ? '搜索问答...' : '搜索生活动态...'}
                     className="input-cyber w-full"
                   />
                   {search && (
@@ -427,7 +588,7 @@ export default async function UserSharePage({ searchParams }: UserSharePageProps
                 </div>
 
                 {/* 发布按钮 */}
-                <SharePageClient mode={tab as 'tool' | 'life'} />
+                <SharePageClient mode={tab as 'tool' | 'life' | 'tech' | 'qa'} />
               </div>
             </div>
 
@@ -460,12 +621,16 @@ export default async function UserSharePage({ searchParams }: UserSharePageProps
                 <div className="w-20 h-20 mx-auto mb-4 flex items-center justify-center border-2 border-neon-magenta clip-chamfer">
                   {tab === 'tool' ? (
                     <Wrench className="w-10 h-10 text-neon-magenta" />
+                  ) : tab === 'tech' ? (
+                    <Code className="w-10 h-10 text-neon-magenta" />
+                  ) : tab === 'qa' ? (
+                    <HelpCircle className="w-10 h-10 text-neon-magenta" />
                   ) : (
                     <Sparkles className="w-10 h-10 text-neon-magenta" />
                   )}
                 </div>
                 <p className="text-cyber-foreground text-lg mb-2 font-orbitron">
-                  {search ? '没有找到相关内容' : `还没有${tab === 'tool' ? '工具分享' : '生活动态'}`}
+                  {search ? '没有找到相关内容' : `还没有${tab === 'tool' ? '工具分享' : tab === 'tech' ? '技术分享' : tab === 'qa' ? '问答' : '生活动态'}`}
                 </p>
                 {!search && (
                   <p className="text-sm text-cyber-muted-foreground font-mono">
@@ -523,25 +688,23 @@ export default async function UserSharePage({ searchParams }: UserSharePageProps
                       }} />
                     )
                   })
-                ) : (
-                  lifeShares.map((share: any) => (
-                    <UserShareCard key={share.id} share={{
-                      id: share.id,
-                      content: share.content,
-                      images: share.images,
-                      video: share.video,
-                      likes: share.likes,
-                      viewCount: share.viewCount || 0,
-                      status: share.status,
-                      type: share.type,
-                      tags: share.tags,
-                      createdAt: share.createdAt,
-                      user: { id: share.userId, username: share.userName, avatarUrl: share.userAvatarUrl, role: share.userRole },
-                      tool: null,
-                      _count: { comments: Number(share.commentsCount || 0) }
-                    }} />
-                  ))
-                )}
+                ) : (tab === 'tech' ? techShares : tab === 'qa' ? qaShares : lifeShares).map((share: any) => (
+                  <UserShareCard key={share.id} share={{
+                    id: share.id,
+                    content: share.content,
+                    images: share.images,
+                    video: share.video,
+                    likes: share.likes,
+                    viewCount: share.viewCount || 0,
+                    status: share.status,
+                    type: share.type,
+                    tags: share.tags,
+                    createdAt: share.createdAt,
+                    user: { id: share.userId, username: share.userName, avatarUrl: share.userAvatarUrl, role: share.userRole },
+                    tool: null,
+                    _count: { comments: Number(share.commentsCount || 0) }
+                  }} />
+                ))}
               </div>
             )}
             
