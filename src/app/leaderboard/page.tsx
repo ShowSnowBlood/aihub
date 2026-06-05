@@ -125,7 +125,7 @@ async function getLeaderboard(type: TabKey, limit = 20) {
         ) h7 ON true
         LEFT JOIN LATERAL (
           SELECT "viewCount" FROM tool_trend_histories
-          WHERE "toolId" = t.id AND date = CURRENT_DATE
+          WHERE "toolId" = t.id AND date = CURRENT_DATE::text
           ORDER BY date DESC LIMIT 1
         ) h1 ON true
         WHERE t.status = 'approved' AND t."isActive" = true
