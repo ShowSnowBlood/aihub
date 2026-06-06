@@ -46,16 +46,33 @@ export async function GET(request: NextRequest) {
 
       if (page) {
         result.abstract = {
+          id: topId,
           title: page.title || query,
           text: page.extract?.replace(/<\/?[^>]+>/g, '').trim() || searchResults[0].snippet?.replace(/<\/?[^>]+>/g, '') || '',
           source: 'Wikipedia',
           url: `https://zh.wikipedia.org/wiki/${encodeURIComponent(page.title)}`,
           image: page.thumbnail?.source ? (page.thumbnail.source.startsWith('//') ? 'https:' + page.thumbnail.source : page.thumbnail.source) : null,
         }
+
+        // 同时获取全文（用于站内展开阅读）
+        try {
+          const fullUrl = `https://zh.wikipedia.org/w/api.php?action=query&pageids=${topId}&prop=extracts&explaintext&format=json&utf8=1`
+          const fullRes = await fetch(fullUrl, {
+            headers: { 'User-Agent': 'AIHub/1.0 (https://ai999999.top)' },
+          })
+          const fullData = await fullRes.json()
+          const fullPage = fullData?.query?.pages?.[topId]
+          if (fullPage?.extract) {
+            result.abstract.fullText = fullPage.extract.replace(/<\/?[^>]+>/g, '').trim()
+          }
+        } catch {
+          // 全文获取失败不影响主结果
+        }
       }
 
       // 更多结果
       result.results = searchResults.slice(0, 5).map((r: any) => ({
+        id: r.pageid,
         title: r.title,
         url: `https://zh.wikipedia.org/wiki/${encodeURIComponent(r.title)}`,
         text: r.snippet?.replace(/<\/?[^>]+>/g, '') || null,
