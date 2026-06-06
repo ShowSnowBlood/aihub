@@ -17,16 +17,45 @@ interface ExternalSearchResult {
   error?: string
 }
 
-export default function ExternalSearch() {
-  const [open, setOpen] = useState(false)
-  const [query, setQuery] = useState('')
+interface ExternalSearchProps {
+  initialQuery?: string
+  onClose?: () => void
+}
+
+export default function ExternalSearch({ initialQuery = '', onClose }: ExternalSearchProps) {
+  const [query, setQuery] = useState(initialQuery)
   const [result, setResult] = useState<ExternalSearchResult | null>(null)
   const [loading, setLoading] = useState(false)
+  const [doneInitial, setDoneInitial] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    if (open) inputRef.current?.focus()
-  }, [open])
+    inputRef.current?.focus()
+    if (initialQuery && !doneInitial) {
+      setDoneInitial(true)
+      doSearch(initialQuery)
+    }
+  }, [initialQuery])
+
+  const doSearch = async (q: string) => {
+    if (!q.trim()) return
+    setLoading(true)
+    setResult(null)
+    try {
+      const res = await fetch(`/api/search/external?q=${encodeURIComponent(q.trim())}`)
+      const data = await res.json()
+      setResult(data)
+    } catch {
+      setResult({ query: q, error: '搜索失败' })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSearch = () => {
+    if (!query.trim()) return
+    doSearch(query.trim())
+  }
 
   const handleSearch = async () => {
     if (!query.trim()) return
@@ -45,45 +74,28 @@ export default function ExternalSearch() {
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') handleSearch()
-    if (e.key === 'Escape') setOpen(false)
+    if (e.key === 'Escape') onClose?.()
   }
 
   return (
-    <>
-      {/* 触发按钮 */}
-      <button
-        onClick={() => setOpen(true)}
-        className="flex items-center gap-1.5 px-3 py-2 text-xs font-mono text-cyber-muted-foreground border border-cyber-border hover:border-neon-cyan/50 hover:text-neon-cyan transition-all duration-200"
-        style={{ clipPath: 'polygon(0 0, calc(100% - 4px) 0, 100% 4px, 100% 100%, 4px 100%, 0 calc(100% - 4px))' }}
-        title="搜索全网（DuckDuckGo）"
-      >
-        <Search className="w-3.5 h-3.5" />
-        <span>全网</span>
-      </button>
-
-      {/* 搜索面板 */}
-      {open && (
-        <div className="fixed inset-0 z-[100] flex items-start justify-center pt-24">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setOpen(false)} />
-          
-          <div className="relative w-full max-w-2xl mx-4 bg-cyber-card border border-cyber-border shadow-[0_0_30px_rgba(0,212,255,0.15)] animate-in fade-in slide-in-from-top-4 duration-200">
-            {/* 搜索框 */}
-            <div className="flex items-center gap-3 p-4 border-b border-cyber-border">
-              <Search className="w-5 h-5 text-neon-cyan flex-shrink-0" />
-              <input
-                ref={inputRef}
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="搜索全网（DuckDuckGo即时百科）..."
-                className="flex-1 bg-transparent border-none text-cyber-foreground font-mono text-sm outline-none placeholder:text-cyber-muted-foreground/50"
-              />
-              {loading && <Loader2 className="w-4 h-4 animate-spin text-neon-cyan" />}
-              <button onClick={() => setOpen(false)} className="text-cyber-muted-foreground hover:text-cyber-foreground">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+    <div className="relative w-full max-w-2xl mx-4 bg-cyber-card border border-cyber-border shadow-[0_0_30px_rgba(0,212,255,0.15)] animate-in fade-in slide-in-from-top-4 duration-200">
+      {/* 搜索框 */}
+      <div className="flex items-center gap-3 p-4 border-b border-cyber-border">
+        <Search className="w-5 h-5 text-neon-cyan flex-shrink-0" />
+        <input
+          ref={inputRef}
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="搜索全网（DuckDuckGo即时百科）..."
+          className="flex-1 bg-transparent border-none text-cyber-foreground font-mono text-sm outline-none placeholder:text-cyber-muted-foreground/50"
+        />
+        {loading && <Loader2 className="w-4 h-4 animate-spin text-neon-cyan" />}
+        <button onClick={() => onClose?.()} className="text-cyber-muted-foreground hover:text-cyber-foreground">
+          <X className="w-4 h-4" />
+        </button>
+      </div>
 
             {/* 结果区 */}
             {result && (
@@ -157,19 +169,6 @@ export default function ExternalSearch() {
                     )}
                   </>
                 )}
-              </div>
-            )}
-
-            {!result && !loading && (
-              <div className="p-8 text-center">
-                <p className="text-cyber-muted-foreground/50 font-mono text-xs">
-                  由 DuckDuckGo 提供即时百科搜索 · 无需注册 无限使用
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-    </>
+    </div>
   )
 }

@@ -3,6 +3,9 @@
 import Link from 'next/link'
 import { Search, Menu, X, Zap, Plus, User, Bell, BrainCircuit, Sun, Moon, ChevronDown } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
+import dynamic from 'next/dynamic'
+
+const ExternalSearch = dynamic(() => import('@/components/ExternalSearch'), { ssr: false })
 import { useRouter, usePathname } from 'next/navigation'
 import Avatar from '@/components/Avatar'
 
@@ -144,6 +147,8 @@ export default function Navbar() {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchMode, setSearchMode] = useState<'site' | 'web'>('site')
   const [modeMenuOpen, setModeMenuOpen] = useState(false)
+  const [showExternal, setShowExternal] = useState(false)
+  const [externalQuery, setExternalQuery] = useState('')
   const [user, setUser] = useState<UserData | null>(null)
   const [unreadCount, setUnreadCount] = useState(0)
   const router = useRouter()
@@ -249,7 +254,8 @@ export default function Navbar() {
     const q = searchQuery.trim()
     if (q) {
       if (searchMode === 'web') {
-        window.location.href = `https://duckduckgo.com/?q=${encodeURIComponent(q)}`
+        setExternalQuery(q)
+        setShowExternal(true)
       } else {
         router.push(`/tools?search=${encodeURIComponent(q)}`)
       }
@@ -703,6 +709,14 @@ export default function Navbar() {
             </div>
           </div>
         </>
+      )}
+
+      {/* 全网搜索面板 */}
+      {showExternal && (
+        <div className="fixed inset-0 z-[100] flex items-start justify-center pt-24">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowExternal(false)} />
+          <ExternalSearch initialQuery={externalQuery} onClose={() => setShowExternal(false)} />
+        </div>
       )}
     </>
   )
