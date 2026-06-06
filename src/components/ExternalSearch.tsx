@@ -87,7 +87,7 @@ export default function ExternalSearch({ initialQuery = '', onClose }: ExternalS
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="搜索全网（DuckDuckGo即时百科）..."
+          placeholder="搜索百科（Wikipedia）..."
           className="flex-1 bg-transparent border-none text-cyber-foreground font-mono text-sm outline-none placeholder:text-cyber-muted-foreground/50"
         />
         {loading && <Loader2 className="w-4 h-4 animate-spin text-neon-cyan" />}
@@ -157,7 +157,7 @@ export default function ExternalSearch({ initialQuery = '', onClose }: ExternalS
           </>
         ) : !loading && (
           <p className="text-cyber-muted-foreground/50 font-mono text-xs text-center">
-            由 DuckDuckGo 提供即时百科搜索 · 无需注册 无限使用
+            由 Wikipedia 提供百科搜索 · 完全免费 无限使用
           </p>
         )}
       </div>

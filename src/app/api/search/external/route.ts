@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 // GET /api/search/external?q=搜索词
-// 代理 DuckDuckGo 即时答案 API（免费、无需API Key）
+// 代理 Wikipedia API（免费、无限制、境内可访问、百科结果）
 export async function GET(request: NextRequest) {
   const q = request.nextUrl.searchParams.get('q')
   if (!q || !q.trim()) {
@@ -9,50 +9,57 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    const query = q.trim()
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 7000)
 
-    const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(q.trim())}&format=json&no_html=1&skip_disambig=1`
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AIHub/1.0; +https://ai999999.top)' },
+    // 第一步：搜索 Wikipedia 文章
+    const searchUrl = `https://zh.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&srlimit=5&utf8=1`
+    const searchRes = await fetch(searchUrl, {
+      headers: { 'User-Agent': 'AIHub/1.0 (https://ai999999.top)' },
       signal: controller.signal,
     })
     clearTimeout(timeout)
 
-    if (!res.ok) {
+    if (!searchRes.ok) {
       return NextResponse.json({ error: '搜索失败' }, { status: 502 })
     }
 
-    const data = await res.json()
+    const searchData = await searchRes.json()
+    const searchResults = searchData?.query?.search || []
 
     const result: any = {
-      query: q.trim(),
+      query,
+      source: 'Wikipedia',
     }
 
-    if (data.AbstractText) {
-      result.abstract = {
-        title: data.Heading || q.trim(),
-        text: data.AbstractText,
-        source: data.AbstractSource || 'DuckDuckGo',
-        url: data.AbstractURL || '',
-        image: data.Image || null,
+    // 第二步：如果有结果，获取第一个的摘要
+    if (searchResults.length > 0) {
+      const topId = searchResults[0].pageid
+      const extractUrl = `https://zh.wikipedia.org/w/api.php?action=query&pageids=${topId}&prop=extracts|pageimages&exintro&explaintext&exsentences=5&pithumbsize=200&format=json&utf8=1`
+      
+      const extractRes = await fetch(extractUrl, {
+        headers: { 'User-Agent': 'AIHub/1.0 (https://ai999999.top)' },
+      })
+      const extractData = await extractRes.json()
+      const page = extractData?.query?.pages?.[topId]
+
+      if (page) {
+        result.abstract = {
+          title: page.title || query,
+          text: page.extract?.replace(/<\/?[^>]+>/g, '').trim() || searchResults[0].snippet?.replace(/<\/?[^>]+>/g, '') || '',
+          source: 'Wikipedia',
+          url: `https://zh.wikipedia.org/wiki/${encodeURIComponent(page.title)}`,
+          image: page.thumbnail?.source || null,
+        }
       }
-    }
 
-    if (data.Results && data.Results.length > 0) {
-      result.results = data.Results.slice(0, 5).map((r: any) => ({
-        title: r.Text || r.FirstURL,
-        url: r.FirstURL,
-        text: null,
+      // 更多结果
+      result.results = searchResults.slice(0, 5).map((r: any) => ({
+        title: r.title,
+        url: `https://zh.wikipedia.org/wiki/${encodeURIComponent(r.title)}`,
+        text: r.snippet?.replace(/<\/?[^>]+>/g, '') || null,
       }))
-    }
-
-    if (data.RelatedTopics && data.RelatedTopics.length > 0) {
-      result.related = data.RelatedTopics.slice(0, 8).map((r: any) => {
-        if (r.Text) return { text: r.Text, url: r.FirstURL }
-        if (r.Topics) return r.Topics.slice(0, 3).map((t: any) => ({ text: t.Text, url: t.FirstURL }))
-        return null
-      }).flat().filter(Boolean)
     }
 
     return NextResponse.json(result, {
@@ -60,6 +67,9 @@ export async function GET(request: NextRequest) {
     })
   } catch (error: any) {
     console.error('外部搜索失败:', error.message)
+    if (error.name === 'AbortError') {
+      return NextResponse.json({ error: '搜索超时，请稍后重试' }, { status: 504 })
+    }
     return NextResponse.json({ error: '搜索服务暂时不可用' }, { status: 500 })
   }
 }
