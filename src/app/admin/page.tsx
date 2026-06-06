@@ -864,7 +864,7 @@ export default function AdminPage() {
                       </div>
                       <div className="flex-1 min-w-0">
                         {/* 头部 */}
-                        <div className="flex items-center gap-3 flex-wrap mb-3">
+                        <div className="flex items-center gap-2 overflow-x-auto scrollbar-none mb-3 whitespace-nowrap">
                           {tool.logoUrl && (
                             <img src={tool.logoUrl} alt="" className="w-8 h-8 rounded object-contain border border-gray-100" />
                           )}

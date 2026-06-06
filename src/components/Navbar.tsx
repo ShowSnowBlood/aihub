@@ -423,7 +423,7 @@ export default function Navbar() {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  className="input-cyber w-12 md:w-16 lg:w-48 xl:w-64 text-xs pl-[90px]"
+                  className="input-cyber w-12 md:w-36 lg:w-48 xl:w-64 text-xs pl-[90px]"
                 />
               </div>
               <Link href="/submit" className="btn-cyber text-xs py-2 px-3 md:px-4">

@@ -387,19 +387,19 @@ export default async function LeaderboardPage({ searchParams }: Props) {
                     </p>
                   </div>
 
-                  {/* 数据 */}
-                  <div className="flex items-center gap-2.5 text-xs flex-shrink-0">
-                    <div className="flex items-center gap-1 px-2 py-1 bg-orange-500/5 border border-orange-500/20 clip-chamfer-sm">
+                  {/* 数据 - 手机上隐藏评论数，减少压缩 */}
+                  <div className="flex items-center gap-1.5 text-xs flex-shrink-0">
+                    <div className="flex items-center gap-1 px-1.5 py-1 bg-orange-500/5 border border-orange-500/20 clip-chamfer-sm">
                       <Flame className="w-3 h-3 text-orange-400" />
-                      <span className="text-cyber-muted-foreground font-mono font-medium">{formatNumber(Number(item.shareCount))}</span>
+                      <span className="text-cyber-muted-foreground font-mono font-medium text-[11px]">{formatNumber(Number(item.shareCount))}</span>
                     </div>
-                    <div className="flex items-center gap-1 px-2 py-1 bg-neon-green/5 border border-neon-green/20 clip-chamfer-sm">
+                    <div className="flex items-center gap-1 px-1.5 py-1 bg-neon-green/5 border border-neon-green/20 clip-chamfer-sm">
                       <Heart className="w-3 h-3 text-neon-green" />
-                      <span className="text-cyber-muted-foreground font-mono font-medium">{formatNumber(Number(item.totalLikes))}</span>
+                      <span className="text-cyber-muted-foreground font-mono font-medium text-[11px]">{formatNumber(Number(item.totalLikes))}</span>
                     </div>
-                    <div className="flex items-center gap-1 px-2 py-1 bg-neon-cyan/5 border border-neon-cyan/20 clip-chamfer-sm">
+                    <div className="hidden sm:flex items-center gap-1 px-1.5 py-1 bg-neon-cyan/5 border border-neon-cyan/20 clip-chamfer-sm">
                       <MessageCircle className="w-3 h-3 text-neon-cyan" />
-                      <span className="text-cyber-muted-foreground font-mono font-medium">{item.commentCount || 0}</span>
+                      <span className="text-cyber-muted-foreground font-mono font-medium text-[11px]">{item.commentCount || 0}</span>
                     </div>
                   </div>
                 </div>
