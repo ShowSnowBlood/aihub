@@ -1,0 +1,64 @@
+import { NextRequest, NextResponse } from 'next/server'
+
+// GET /api/search/external?q=搜索词
+// 代理 DuckDuckGo 即时答案 API（免费、无需API Key）
+export async function GET(request: NextRequest) {
+  const q = request.nextUrl.searchParams.get('q')
+  if (!q || !q.trim()) {
+    return NextResponse.json({ results: [] })
+  }
+
+  try {
+    const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(q.trim())}&format=json&no_html=1&skip_disambig=1`
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'AIHub/1.0' },
+      signal: AbortSignal.timeout(5000),
+    })
+
+    if (!res.ok) {
+      return NextResponse.json({ error: '搜索失败' }, { status: 502 })
+    }
+
+    const data = await res.json()
+
+    // 提取关键信息
+    const result: any = {
+      query: q.trim(),
+    }
+
+    if (data.AbstractText) {
+      result.abstract = {
+        title: data.Heading || q.trim(),
+        text: data.AbstractText,
+        source: data.AbstractSource || 'DuckDuckGo',
+        url: data.AbstractURL || '',
+        image: data.Image || null,
+      }
+    }
+
+    // 精选结果
+    if (data.Results && data.Results.length > 0) {
+      result.results = data.Results.slice(0, 5).map((r: any) => ({
+        title: r.Text || r.FirstURL,
+        url: r.FirstURL,
+        text: null,
+      }))
+    }
+
+    // 相关话题
+    if (data.RelatedTopics && data.RelatedTopics.length > 0) {
+      result.related = data.RelatedTopics.slice(0, 8).map((r: any) => {
+        if (r.Text) return { text: r.Text, url: r.FirstURL }
+        if (r.Topics) return r.Topics.slice(0, 3).map((t: any) => ({ text: t.Text, url: t.FirstURL }))
+        return null
+      }).flat().filter(Boolean)
+    }
+
+    return NextResponse.json(result, {
+      headers: { 'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=7200' }
+    })
+  } catch (error: any) {
+    console.error('外部搜索失败:', error)
+    return NextResponse.json({ error: '搜索服务暂时不可用' }, { status: 500 })
+  }
+}

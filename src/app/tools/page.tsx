@@ -5,6 +5,7 @@ import Footer from '@/components/Footer'
 import ToolCard from '@/components/ToolCard'
 import CategoryFilter from '@/components/CategoryFilter'
 import ToolsSearchBar from '@/components/ToolsSearchBar'
+import ExternalSearch from '@/components/ExternalSearch'
 import { Suspense } from 'react'
 import { Terminal, Cpu, ChevronLeft, ChevronRight } from 'lucide-react'
 
@@ -204,6 +205,7 @@ export default async function ToolsPage({
           <div className="mt-6">
             <Suspense>
               <ToolsSearchBar />
+              <ExternalSearch />
             </Suspense>
           </div>
         </div>
