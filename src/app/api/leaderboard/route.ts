@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (type === 'trending') {
-      // 趋势上升 - 按7天增长率排序
+      // 趋势上升 - 按7天增长率排序（如果数据不足则按浏览量排序）
       const sevenDaysAgo = new Date()
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
       const dateStr = sevenDaysAgo.toISOString().split('T')[0]
@@ -60,7 +60,8 @@ export async function GET(request: NextRequest) {
           t."shortDesc",
           COALESCE(h1."viewCount", 0) as "todayViews",
           h7."viewCount" as "weekAgoViews",
-          c.name as "categoryName"
+          c.name as "categoryName",
+          CASE WHEN h1."viewCount" IS NOT NULL THEN 1 ELSE 0 END as "hasTrendData"
         FROM tools t
         LEFT JOIN categories c ON t."categoryId" = c.id
         LEFT JOIN LATERAL (
@@ -74,8 +75,8 @@ export async function GET(request: NextRequest) {
           ORDER BY date DESC LIMIT 1
         ) h7 ON true
         WHERE t.status = 'approved' AND t."isActive" = true
-          AND h1."viewCount" IS NOT NULL
         ORDER BY
+          "hasTrendData" DESC,
           CASE WHEN h7."viewCount" IS NOT NULL AND h7."viewCount" > 0
             THEN (h1."viewCount" - h7."viewCount")::float / h7."viewCount"
             ELSE 0

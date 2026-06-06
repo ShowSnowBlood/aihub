@@ -239,8 +239,8 @@ export default async function LeaderboardPage({ searchParams }: Props) {
               <div className="bg-cyber-card border border-cyber-border clip-chamfer p-12 text-center">
                 {validTab === 'trending' ? (
                   <>
-                    <p className="text-cyber-muted-foreground font-mono mb-2">趋势数据收集中...</p>
-                    <p className="text-cyber-muted-foreground/60 text-xs font-mono">每日UTC 2:00自动记录，积累几天后即可显示涨幅排名</p>
+                    <p className="text-cyber-muted-foreground font-mono mb-2">暂无工具数据</p>
+                    <p className="text-cyber-muted-foreground/60 text-xs font-mono">等待工具趋势数据积累后即可显示涨幅排名</p>
                   </>
                 ) : (
                   <p className="text-cyber-muted-foreground font-mono">暂无排行数据</p>
