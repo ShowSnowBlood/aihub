@@ -8,9 +8,15 @@ const nextConfig = {
   },
   async headers() {
     return [
+      // 首页 — 不缓存（防止浏览器引用旧的 chunk 名）
+      {
+        source: '/',
+        headers: [
+          { key: 'Cache-Control', value: 'no-cache' },
+        ]
+      },
       {
         source: '/:path*',
-        headers: [
           // Content Security Policy — 去掉了 'unsafe-eval'（生产不需要），加严 script 来源
           {
             key: 'Content-Security-Policy',
