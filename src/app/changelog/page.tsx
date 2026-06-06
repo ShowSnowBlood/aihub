@@ -5,6 +5,21 @@ import { Clock, Github, MessageSquare, ArrowUpRight, Sparkles, Shield, Zap, Bug,
 
 const updates = [
   {
+    date: '2026-06-06',
+    title: '全网搜索 & 额度优化',
+    icon: Sparkles,
+    color: 'text-neon-cyan',
+    items: [
+      '🔍 全网百科搜索（Wikipedia 站内阅读，无需翻墙）',
+      '🖼️ R2 图片上传修复，工具提交图不再占数据库',
+      '⚡ 额度优化：ISR 30分钟/API缓存/搜索需登录',
+      '📱 手机端布局修复（搜索框/排行榜/admin卡片）',
+      '🎯 排行榜趋势榜数据不足时按浏览量排序',
+      '🏠 首页新增热门话题标签',
+      '⚙️ 后台统计5分钟轮询+合并查询（省额度）',
+    ]
+  },
+  {
     date: '2026-06-05',
     title: '社区全面升级 & 动态排行榜',
     icon: Sparkles,
