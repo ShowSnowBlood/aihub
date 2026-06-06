@@ -70,7 +70,7 @@ export default function ExternalSearch({ initialQuery = '', onClose }: ExternalS
             text: page.extract?.replace(/<\/?[^>]+>/g, '').trim() || '',
             source: 'Wikipedia',
             url: `https://zh.wikipedia.org/wiki/${encodeURIComponent(page.title)}`,
-            image: page.thumbnail?.source || null,
+            image: page.thumbnail?.source ? (page.thumbnail.source.startsWith('//') ? 'https:' + page.thumbnail.source : page.thumbnail.source) : null,
           }
         }
 
@@ -127,7 +127,8 @@ export default function ExternalSearch({ initialQuery = '', onClose }: ExternalS
               <div className="bg-cyber-muted/20 border border-neon-cyan/20 p-4">
                 <div className="flex items-start gap-4">
                   {result.abstract.image && (
-                    <img src={result.abstract.image} alt="" className="w-16 h-16 object-cover flex-shrink-0 border border-cyber-border" />
+                    <img src={result.abstract.image} alt="" className="w-16 h-16 object-cover flex-shrink-0 border border-cyber-border rounded"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
                   )}
                   <div className="flex-1 min-w-0">
                     <h3 className="text-sm font-orbitron font-bold text-neon-cyan mb-1">{result.abstract.title}</h3>
