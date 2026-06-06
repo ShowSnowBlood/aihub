@@ -3,6 +3,9 @@
 import Link from 'next/link'
 import { Search, Menu, X, Zap, Plus, User, Bell, BrainCircuit, Sun, Moon } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
+import dynamic from 'next/dynamic'
+
+const ExternalSearch = dynamic(() => import('@/components/ExternalSearch'), { ssr: false })
 import { useRouter, usePathname } from 'next/navigation'
 import Avatar from '@/components/Avatar'
 
@@ -375,6 +378,7 @@ export default function Navbar() {
                   className="input-cyber w-12 md:w-16 lg:w-48 xl:w-64 text-xs"
                 />
               </div>
+              <ExternalSearch />
               <Link href="/submit" className="btn-cyber text-xs py-2 px-3 md:px-4">
                 <Zap className="w-3 h-3 inline mr-1" />
                 <span className="hidden lg:inline">提交</span>
