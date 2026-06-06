@@ -2,43 +2,35 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { verifyAdmin } from '@/lib/auth'
 
-// GET /api/admin/stats  后台数据统计
+// GET /api/admin/stats  后台数据统计（单次查询，节省数据库连接）
 export async function GET(request: NextRequest) {
   const auth = await verifyAdmin(request)
   if (auth instanceof NextResponse) return auth
 
   try {
-    const today = new Date().toISOString().split('T')[0]
+    // 一次查询拿下所有计数，省 7 次数据库往返
+    const result = await prisma.$queryRawUnsafe<Array<any>>(`
+      SELECT
+        (SELECT COUNT(*) FROM tools WHERE status = 'approved') as tools,
+        (SELECT COUNT(*) FROM shares WHERE status = 'approved') as shares,
+        (SELECT COUNT(*) FROM users WHERE role != 'BANNED') as users,
+        (SELECT COUNT(*) FROM tools WHERE status = 'pending') as "pendingTools",
+        (SELECT COUNT(*) FROM shares WHERE status = 'pending') as "pendingShares",
+        (SELECT COUNT(*) FROM tools WHERE "createdAt"::date >= CURRENT_DATE) as todayTools,
+        (SELECT COUNT(*) FROM shares WHERE "createdAt"::date >= CURRENT_DATE) as todayShares,
+        (SELECT COUNT(*) FROM users WHERE "createdAt"::date >= CURRENT_DATE) as todayUsers
+    `)
 
-    const results = await Promise.all([
-      // 工具总数
-      prisma.$queryRawUnsafe<Array<any>>(`SELECT COUNT(*) as c FROM tools WHERE status = 'approved'`),
-      // 分享总数
-      prisma.$queryRawUnsafe<Array<any>>(`SELECT COUNT(*) as c FROM shares WHERE status = 'approved'`),
-      // 用户总数
-      prisma.$queryRawUnsafe<Array<any>>(`SELECT COUNT(*) as c FROM users WHERE role != 'BANNED'`),
-      // 待审核工具
-      prisma.$queryRawUnsafe<Array<any>>(`SELECT COUNT(*) as c FROM tools WHERE status = 'pending'`),
-      // 待审核分享
-      prisma.$queryRawUnsafe<Array<any>>(`SELECT COUNT(*) as c FROM shares WHERE status = 'pending'`),
-      // 今日新增工具
-      prisma.$queryRawUnsafe<Array<any>>(`SELECT COUNT(*) as c FROM tools WHERE "createdAt"::date >= $1::date`, today),
-      // 今日新增分享
-      prisma.$queryRawUnsafe<Array<any>>(`SELECT COUNT(*) as c FROM shares WHERE "createdAt"::date >= $1::date`, today),
-      // 今日新增用户
-      prisma.$queryRawUnsafe<Array<any>>(`SELECT COUNT(*) as c FROM users WHERE "createdAt"::date >= $1::date`, today),
-    ])
+    const row = result[0] || {}
 
-    const stats = {
-      tools: Number(results[0][0]?.c || 0),
-      shares: Number(results[1][0]?.c || 0),
-      users: Number(results[2][0]?.c || 0),
-      pendingTools: Number(results[3][0]?.c || 0),
-      pendingShares: Number(results[4][0]?.c || 0),
-      todayNew: [5, 6, 7].reduce((sum, i) => sum + Number(results[i]?.[0]?.c || 0), 0)
-    }
-
-    return NextResponse.json(stats)
+    return NextResponse.json({
+      tools: Number(row.tools || 0),
+      shares: Number(row.shares || 0),
+      users: Number(row.users || 0),
+      pendingTools: Number(row.pendingTools || 0),
+      pendingShares: Number(row.pendingShares || 0),
+      todayNew: Number(row.todayTools || 0) + Number(row.todayShares || 0) + Number(row.todayUsers || 0),
+    })
   } catch (error: any) {
     console.error('获取统计失败:', error)
     return NextResponse.json({ error: '获取统计失败' }, { status: 500 })

@@ -2355,7 +2355,7 @@ function StatsCards() {
       }
     }
     fetchStats()
-    const interval = setInterval(fetchStats, 60000)
+    const interval = setInterval(fetchStats, 300000) // 每5分钟轮询（省额度）
     return () => clearInterval(interval)
   }, [])
 

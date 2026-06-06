@@ -5,7 +5,6 @@ const nextConfig = {
     unoptimized: true,
   },
   env: {
-    DATABASE_URL: process.env.DATABASE_URL,
   },
   async headers() {
     return [
