@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { uploadImage, parseBase64Image, isR2Configured } from '@/lib/r2'
+import sanitizeHtml from 'sanitize-html'
 
 // GET /api/shares?type=tool|life|tech_share|qa_help&toolId=&sort=new|hot&page=1&limit=10&search=
 export async function GET(request: NextRequest) {
@@ -176,6 +177,7 @@ export async function POST(request: NextRequest) {
     if (!content?.trim()) {
       return NextResponse.json({ error: '内容不能为空' }, { status: 400 })
     }
+    content = sanitizeHtml(content.trim(), { allowedTags: [], allowedAttributes: {} })
     if (!userId) {
       return NextResponse.json({ error: '请先登录' }, { status: 401 })
     }

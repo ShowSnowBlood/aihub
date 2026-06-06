@@ -5,6 +5,7 @@ import { createNotification } from '@/lib/notification'
 import { addExp } from '@/lib/add-exp'
 import { EXP_RULES } from '@/lib/level'
 import { checkAndUnlock } from '@/lib/check-achievements'
+import sanitizeHtml from 'sanitize-html'
 
 // GET /api/shares/[id]/comments - 获取分享的评论列表
 export async function GET(
@@ -67,6 +68,9 @@ export async function POST(
         error: `今日评论次数已达上限（每天5次），请明天再试` 
       }, { status: 429 })
     }
+
+    // 消毒用户输入
+    content = sanitizeHtml(content.trim(), { allowedTags: [], allowedAttributes: {} })
 
     // 创建评论到 share_comments 表
     if (parentId) {

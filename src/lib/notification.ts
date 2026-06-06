@@ -16,14 +16,11 @@ export async function createNotification(params: CreateNotificationParams) {
   const { userId, type, title, content, link, relatedUserId } = params;
 
   try {
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO notifications ("userId", "type", "title", "content", "link", "relatedUserId", "isRead", "createdAt")
-       VALUES ($1, $2, $3, $4, $5, $6, false, NOW())`,
-      userId, type, title, content || null, link || null, relatedUserId || null
-    );
+    await prisma.notification.create({
+      data: { userId, type, title, content, link, relatedUserId },
+    });
   } catch (error) {
     console.error('[Notification] Failed to create notification:', error);
-    // 静默失败，不阻塞主流程
   }
 }
 
@@ -43,10 +40,9 @@ export async function createNotifications(
  */
 export async function getUnreadCount(userId: number): Promise<number> {
   try {
-    const result = await prisma.$queryRaw<{ count: bigint }[]>`
-      SELECT COUNT(*) as count FROM notifications WHERE "userId" = ${userId} AND "isRead" = false
-    `;
-    return Number(result[0]?.count || 0);
+    return await prisma.notification.count({
+      where: { userId, isRead: false },
+    });
   } catch (error) {
     console.error('[Notification] Failed to get unread count:', error);
     return 0;
@@ -58,10 +54,10 @@ export async function getUnreadCount(userId: number): Promise<number> {
  */
 export async function markAsRead(notificationId: number, userId: number) {
   try {
-    await prisma.$executeRawUnsafe(
-      `UPDATE notifications SET "isRead" = true WHERE "id" = $1 AND "userId" = $2`,
-      notificationId, userId
-    );
+    await prisma.notification.updateMany({
+      where: { id: notificationId, userId },
+      data: { isRead: true },
+    });
   } catch (error) {
     console.error('[Notification] Failed to mark as read:', error);
   }
@@ -72,10 +68,10 @@ export async function markAsRead(notificationId: number, userId: number) {
  */
 export async function markAllAsRead(userId: number) {
   try {
-    await prisma.$executeRawUnsafe(
-      `UPDATE notifications SET "isRead" = true WHERE "userId" = $1 AND "isRead" = false`,
-      userId
-    );
+    await prisma.notification.updateMany({
+      where: { userId, isRead: false },
+      data: { isRead: true },
+    });
   } catch (error) {
     console.error('[Notification] Failed to mark all as read:', error);
   }
@@ -86,10 +82,9 @@ export async function markAllAsRead(userId: number) {
  */
 export async function deleteNotification(notificationId: number, userId: number) {
   try {
-    await prisma.$executeRawUnsafe(
-      `DELETE FROM notifications WHERE "id" = $1 AND "userId" = $2`,
-      notificationId, userId
-    );
+    await prisma.notification.deleteMany({
+      where: { id: notificationId, userId },
+    });
   } catch (error) {
     console.error('[Notification] Failed to delete notification:', error);
   }
@@ -103,39 +98,20 @@ export async function getNotifications(
   page: number = 1,
   pageSize: number = 20,
 ) {
-  const offset = (page - 1) * pageSize;
+  const skip = (page - 1) * pageSize;
 
   try {
-    const notifications = await prisma.$queryRaw<
-      Array<{
-        id: number;
-        userId: number;
-        type: string;
-        title: string;
-        content: string | null;
-        link: string | null;
-        relatedUserId: number | null;
-        isRead: boolean;
-        createdAt: Date;
-      }>
-    >`
-      SELECT id, "userId", type, title, content, link, "relatedUserId", "isRead", "createdAt"
-      FROM notifications
-      WHERE "userId" = ${userId}
-      ORDER BY "createdAt" DESC
-      LIMIT ${pageSize} OFFSET ${offset}
-    `;
+    const [notifications, total] = await Promise.all([
+      prisma.notification.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: pageSize,
+      }),
+      prisma.notification.count({ where: { userId } }),
+    ]);
 
-    const totalResult = await prisma.$queryRaw<{ count: bigint }[]>`
-      SELECT COUNT(*) as count FROM notifications WHERE "userId" = ${userId}
-    `;
-
-    return {
-      notifications,
-      total: Number(totalResult[0]?.count || 0),
-      page,
-      pageSize,
-    };
+    return { notifications, total, page, pageSize };
   } catch (error) {
     console.error('[Notification] Failed to get notifications:', error);
     return { notifications: [], total: 0, page, pageSize };

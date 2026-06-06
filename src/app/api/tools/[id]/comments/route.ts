@@ -4,6 +4,7 @@ import { canComment, incrementCommentCount } from '@/lib/daily-limit'
 import { createNotification } from '@/lib/notification'
 import { addExp } from '@/lib/add-exp'
 import { EXP_RULES } from '@/lib/level'
+import sanitizeHtml from 'sanitize-html'
 
 // GET /api/tools/[id]/comments - 获取工具的评论列表
 export async function GET(
@@ -75,6 +76,9 @@ export async function POST(
       return NextResponse.json({ error: '评论内容不能为空' }, { status: 400 })
     }
 
+    // 消毒用户输入
+    const cleanContent = sanitizeHtml(content.trim(), { allowedTags: [], allowedAttributes: {} })
+
     // 检查用户评论次数限制
     const { allowed, remaining } = await canComment(userId)
     if (!allowed) {
@@ -86,7 +90,7 @@ export async function POST(
     // 创建评论到 comments 表，使用 toolId 字段
     await prisma.$executeRaw`
       INSERT INTO comments (content, "userId", "toolId", "targetType", "createdAt", "updatedAt")
-      VALUES (${content.trim()}, ${userId}, ${toolId}, 'tool', NOW(), NOW())
+      VALUES (${cleanContent}, ${userId}, ${toolId}, 'tool', NOW(), NOW())
     `
 
     // 获取刚创建的评论
@@ -124,7 +128,7 @@ export async function POST(
           userId: adminId,
           type: 'comment',
           title: `有人评论了工具「${toolName}」`,
-          content: content.trim().substring(0, 100),
+          content: cleanContent.substring(0, 100),
           link: `/tools/${comment?.toolId || toolId}`,
           relatedUserId: Number(userId),
         }).catch(() => {})
@@ -142,7 +146,7 @@ export async function POST(
         body: JSON.stringify({
           targetType: 'comment',
           targetId: comment.id,
-          content: content.trim(),
+          content: cleanContent,
           authorName: comment.userName || '用户',
           authorId: userId,
           context: comment.toolName || undefined
