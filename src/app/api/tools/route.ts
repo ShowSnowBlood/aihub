@@ -152,7 +152,7 @@ export async function POST(request: NextRequest) {
       data: {
         type: 'tool',
         content: description?.trim() || shortDesc.trim(),
-        images: images?.length > 0 ? JSON.stringify(images) : null,
+        images: images && images.length > 0 ? JSON.stringify(images) : null,
         userId: submitterId!,
         status: toolStatus,
         tags: tags || null,
