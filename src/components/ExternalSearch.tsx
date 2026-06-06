@@ -42,11 +42,37 @@ export default function ExternalSearch({ initialQuery = '', onClose }: ExternalS
     setLoading(true)
     setResult(null)
     try {
-      const res = await fetch(`/api/search/external?q=${encodeURIComponent(q.trim())}`)
+      // 直接从浏览器调用 DuckDuckGo API（不通过服务器，避免 Vercel IP 被限流）
+      const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(q.trim())}&format=json&no_html=1&skip_disambig=1`
+      const res = await fetch(url)
+      if (!res.ok) throw new Error('HTTP ' + res.status)
       const data = await res.json()
-      setResult(data)
+
+      const processed: ExternalSearchResult = { query: q.trim() }
+      if (data.AbstractText) {
+        processed.abstract = {
+          title: data.Heading || q.trim(),
+          text: data.AbstractText,
+          source: data.AbstractSource || 'DuckDuckGo',
+          url: data.AbstractURL || '',
+          image: data.Image || null,
+        }
+      }
+      if (data.Results?.length) {
+        processed.results = data.Results.slice(0, 5).map((r: any) => ({
+          title: r.Text || r.FirstURL, url: r.FirstURL, text: null,
+        }))
+      }
+      if (data.RelatedTopics?.length) {
+        processed.related = data.RelatedTopics.slice(0, 8).map((r: any) => {
+          if (r.Text) return { text: r.Text, url: r.FirstURL }
+          if (r.Topics) return r.Topics.slice(0, 3).map((t: any) => ({ text: t.Text, url: t.FirstURL }))
+          return null
+        }).flat().filter(Boolean)
+      }
+      setResult(processed)
     } catch {
-      setResult({ query: q, error: '搜索失败' })
+      setResult({ query: q, error: '搜索失败，请稍后重试' })
     } finally {
       setLoading(false)
     }
