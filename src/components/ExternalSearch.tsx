@@ -42,26 +42,48 @@ export default function ExternalSearch({ initialQuery = '', onClose }: ExternalS
     setLoading(true)
     setResult(null)
     try {
-      // 经过自己的 API 代理（避免 CORS 限制），1 小时 CDN 缓存
+      const query = q.trim()
+      // 浏览器直调 Wikipedia API（支持 CORS，0 额度消耗）
       const controller = new AbortController()
       const timeout = setTimeout(() => controller.abort(), 8000)
-      const res = await fetch(`/api/search/external?q=${encodeURIComponent(q.trim())}`, {
-        signal: controller.signal,
-      })
-      clearTimeout(timeout)
 
-      if (!res.ok) {
-        const text = await res.text().catch(() => '')
-        throw new Error(text || `HTTP ${res.status}`)
+      const searchUrl = `https://zh.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&srlimit=5&utf8=1&origin=*`
+      const searchRes = await fetch(searchUrl, { signal: controller.signal })
+      clearTimeout(timeout)
+      if (!searchRes.ok) throw new Error('搜索请求失败')
+
+      const searchData = await searchRes.json()
+      const searchResults = searchData?.query?.search || []
+
+      const processed: ExternalSearchResult = { query }
+
+      if (searchResults.length > 0) {
+        const topId = searchResults[0].pageid
+        const extractUrl = `https://zh.wikipedia.org/w/api.php?action=query&pageids=${topId}&prop=extracts|pageimages&exintro&explaintext&exsentences=5&pithumbsize=200&format=json&utf8=1&origin=*`
+        const extractRes = await fetch(extractUrl)
+        const extractData = await extractRes.json()
+        const page = extractData?.query?.pages?.[topId]
+
+        if (page) {
+          processed.abstract = {
+            title: page.title || query,
+            text: page.extract?.replace(/<\/?[^>]+>/g, '').trim() || '',
+            source: 'Wikipedia',
+            url: `https://zh.wikipedia.org/wiki/${encodeURIComponent(page.title)}`,
+            image: page.thumbnail?.source || null,
+          }
+        }
+
+        processed.results = searchResults.slice(0, 5).map((r: any) => ({
+          title: r.title,
+          url: `https://zh.wikipedia.org/wiki/${encodeURIComponent(r.title)}`,
+          text: r.snippet?.replace(/<\/?[^>]+>/g, '') || null,
+        }))
       }
-      const data = await res.json()
-      if (data.error) throw new Error(data.error)
-      setResult(data)
-    } catch (err: any) {
-      setResult({
-        query: q,
-        error: err.message?.includes('abort') ? '搜索超时，请稍后重试' : '搜索服务暂时不可用',
-      })
+
+      setResult(processed)
+    } catch {
+      setResult({ query: q, error: '搜索失败，请稍后重试' })
     } finally {
       setLoading(false)
     }
