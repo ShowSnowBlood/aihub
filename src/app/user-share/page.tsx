@@ -716,7 +716,7 @@ export default async function UserSharePage({ searchParams }: UserSharePageProps
                   <span>共 {currentShares.length} 条</span>
                 </div>
                 ) : (
-                  <LoadMore initialTab={tab} initialSkip={currentShares.length} />
+                  <ShareLoadMore initialTab={tab} initialSkip={currentShares.length} />
                 )}
               </div>
             )}
