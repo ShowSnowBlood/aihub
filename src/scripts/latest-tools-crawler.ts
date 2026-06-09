@@ -147,24 +147,26 @@ async function saveTools(tools: any[]) {
   let skipped = 0
   
   const tagToCategory: Record<string, string> = {
-    '聊天对话': '聊天对话', 'chatbot': '聊天对话', 'chat': '聊天对话',
-    '图像生成': '图像生成', 'image': '图像生成', '绘画': '图像生成',
-    '视频生成': '视频生成', 'video': '视频生成',
-    '音频处理': '音频处理', 'audio': '音频处理', 'music': '音频处理',
-    '写作助手': '写作助手', 'writing': '写作助手',
-    '代码助手': '代码助手', 'code': '代码助手', 'coding': '代码助手',
+    '聊天对话': '聊天对话', 'chatbot': '聊天对话', 'chat': '聊天对话', 'conversation': '聊天对话',
+    '图像生成': '图像生成', 'image': '图像生成', '绘画': '图像生成', 'image-generation': '图像生成',
+    '视频生成': '视频生成', 'video': '视频生成', 'video-generation': '视频生成',
+    '音频处理': '音频处理', 'audio': '音频处理', 'music': '音频处理', 'speech': '音频处理',
+    '写作助手': '写作助手', 'writing': '写作助手', 'content': '写作助手',
+    '代码助手': '代码助手', 'code': '代码助手', 'coding': '代码助手', 'developer-tools': '代码助手',
+    'framework': '代码助手', '开发': '代码助手', 'deployment': '代码助手', 'deploy': '代码助手',
+    'llm': '代码助手', 'machine-learning': '代码助手', 'model': '代码助手',
+    'ai-agent': '代码助手', 'agent': '代码助手', 'rag': '代码助手', 'embedding': '代码助手',
+    'openai': '代码助手', 'api': '代码助手',
     '搜索引擎': '搜索引擎', 'search': '搜索引擎',
     '翻译工具': '翻译工具', 'translation': '翻译工具',
-    '设计工具': '设计工具', 'design': '设计工具',
+    '设计工具': '设计工具', 'design': '设计工具', 'ui': '设计工具',
     '办公效率': '办公效率', 'productivity': '办公效率',
+    'automation': '办公效率', 'workflow': '办公效率',
     '知识管理': '知识管理', 'knowledge': '知识管理',
-    '数据分析': '数据分析', 'data': '数据分析',
-    '教育学习': '教育学习', 'education': '教育学习',
+    '数据分析': '数据分析', 'data': '数据分析', 'analytics': '数据分析',
+    '教育学习': '教育学习', 'education': '教育学习', 'tutorial': '教育学习',
     '健康医疗': '健康医疗', 'health': '健康医疗',
     '金融理财': '金融理财', 'finance': '金融理财',
-    'AI代理': 'AI代理', 'ai-agent': 'AI代理', 'agent': 'AI代理',
-    '知识库': '知识库', 'rag': '知识库',
-    '向量搜索': '向量搜索', 'embedding': '向量搜索',
   }
   
   for (const tool of tools) {
