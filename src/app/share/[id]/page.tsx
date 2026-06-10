@@ -8,7 +8,7 @@ import { getShareImages } from '@/lib/share-image'
 import ShareDetailClient from './ShareDetailClient'
 import type { Metadata } from 'next'
 
-export const revalidate = 1800
+export const revalidate = 3600
 
 interface Props {
   params: { id: string }

@@ -15,7 +15,11 @@ export async function GET() {
       }
     })
 
-    return NextResponse.json({ categories })
+    return NextResponse.json({ categories }, {
+      headers: {
+        'Cache-Control': 'public, max-age=300, s-maxage=600, stale-while-revalidate=86400',
+      },
+    })
   } catch (error) {
     console.error('获取分类失败:', error)
     return NextResponse.json({ error: '获取分类失败' }, { status: 500 })

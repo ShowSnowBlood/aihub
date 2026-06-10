@@ -18,7 +18,11 @@ export async function GET() {
       ).length
     })).filter(t => t.count > 0).sort((a, b) => b.count - a.count)
     
-    return NextResponse.json({ tags: tagCounts })
+    return NextResponse.json({ tags: tagCounts }, {
+      headers: {
+        'Cache-Control': 'public, max-age=600, s-maxage=1800, stale-while-revalidate=86400',
+      },
+    })
   } catch (error) {
     console.error('Failed to fetch tags:', error)
     return NextResponse.json(
