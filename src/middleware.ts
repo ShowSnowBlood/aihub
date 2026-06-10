@@ -24,10 +24,64 @@ const requestCounts = new Map<string, { count: number; expiresAt: number }>()
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
+  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+    || request.headers.get('x-real-ip')
+    || '127.0.0.1'
+  const userAgent = request.headers.get('user-agent') || ''
+  const now = Date.now()
+  const windowMs = 60_000
+
+  // 对可疑 User-Agent 直接拦截
+  const dangerousUA = ['curl', 'wget', 'python-requests', 'Go-http-client', 'fasthttp', 'Scrapy', 'okhttp']
+  const isBrowser = userAgent.includes('Mozilla') || userAgent.includes('Chrome') || userAgent.includes('Safari') || userAgent.includes('Edge')
+  const isSearchBot = userAgent.includes('Googlebot') || userAgent.includes('Bingbot') || userAgent.includes('YandexBot') || userAgent.includes('Yandex') || userAgent.includes('Slurp')
+  const isSuspicious = !isBrowser && !isSearchBot && (
+    !userAgent || 
+    userAgent.length < 10 ||
+    dangerousUA.some(ua => userAgent.toLowerCase().includes(ua.toLowerCase()))
+  )
+
+  if (isSuspicious) {
+    console.warn(`⚠️ 拦截可疑请求: ${ip} - ${pathname} - UA: ${userAgent.substring(0, 50)}`)
+    return new NextResponse(
+      JSON.stringify({ error: '请求被拒绝' }),
+      { status: 403, headers: { 'Content-Type': 'application/json', ...SECURITY_HEADERS } }
+    )
+  }
+
+  // === 页面级限流：保护分享/用户中心免受批量抓取 ===
+  const isPageRoute = pathname.startsWith('/share/') || pathname.startsWith('/u/') || pathname.startsWith('/user-center')
+  if (isPageRoute) {
+    // 搜索引擎放行，非浏览器脚本限流
+    if (!isBrowser && !isSearchBot) {
+      return new NextResponse(
+        JSON.stringify({ error: '请求被拒绝' }),
+        { status: 403, headers: { 'Content-Type': 'application/json', ...SECURITY_HEADERS } }
+      )
+    }
+    // 同 IP 对页面请求限流（200次/分钟，防止批量扒站）
+    const pageKey = `page:${ip}`
+    const pageRecord = requestCounts.get(pageKey)
+    if (pageRecord && pageRecord.expiresAt >= now && pageRecord.count > 200) {
+      console.warn(`⚠️ 页面限流: ${ip} - ${pathname}`)
+      return new NextResponse(
+        JSON.stringify({ error: '请求过于频繁' }),
+        { status: 429, headers: { 'Content-Type': 'application/json', ...SECURITY_HEADERS } }
+      )
+    }
+    if (!pageRecord || pageRecord.expiresAt < now) {
+      requestCounts.set(pageKey, { count: 1, expiresAt: now + windowMs })
+    } else {
+      pageRecord.count++
+    }
+  }
 
   // === API 请求限流 ===
   if (!pathname.startsWith('/api/')) {
-    return NextResponse.next()
+    // 非 API 路由，只加了页面级限流，直接放行
+    const response = NextResponse.next()
+    Object.entries(SECURITY_HEADERS).forEach(([key, value]) => response.headers.set(key, value))
+    return response
   }
 
   // === CORS：处理 OPTIONS 预检请求 ===
@@ -35,37 +89,11 @@ export function middleware(request: NextRequest) {
     return new NextResponse(null, { status: 204, headers: { ...CORS_HEADERS, ...SECURITY_HEADERS } })
   }
 
-  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-    || request.headers.get('x-real-ip')
-    || '127.0.0.1'
-
-  const now = Date.now()
-  const windowMs = 60_000
-
-  // HF Space 和前端页面放宽限制
-  const userAgent = request.headers.get('user-agent') || ''
   const isHF = userAgent.includes('HuggingFace') || request.headers.get('origin')?.includes('hf.space')
-  const isBrowser = userAgent.includes('Mozilla') || userAgent.includes('Chrome') || userAgent.includes('Safari')
 
   // 非浏览器/HF的API请求（可能是爬虫或脚本）：10次/分钟
   // 浏览器/HF请求：60次/分钟
   const maxRequests = (isBrowser || isHF) ? 60 : 10
-
-  // 对可疑 User-Agent 直接拦截（空/常见爬虫）
-  const dangerousUA = ['curl', 'wget', 'python-requests', 'Go-http-client', 'fasthttp', 'Scrapy', 'okhttp']
-  const isSuspicious = !isBrowser && !isHF && (
-    !userAgent || 
-    userAgent.length < 10 ||
-    dangerousUA.some(ua => userAgent.toLowerCase().includes(ua.toLowerCase()))
-  )
-
-  if (isSuspicious) {
-    console.warn(`⚠️ 拦截可疑请求: ${ip} - UA: ${userAgent.substring(0, 50)}`)
-    return new NextResponse(
-      JSON.stringify({ error: '请求被拒绝' }),
-      { status: 403, headers: { 'Content-Type': 'application/json', ...SECURITY_HEADERS } }
-    )
-  }
 
   const record = requestCounts.get(ip)
 
