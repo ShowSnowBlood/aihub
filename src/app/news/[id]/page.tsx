@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ArrowLeft, Clock, Eye, Share2 } from 'lucide-react'
+import { ArrowLeft, Clock, ExternalLink, Eye, Share2 } from 'lucide-react'
 import { notFound } from 'next/navigation'
 import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
@@ -156,7 +156,18 @@ export default async function NewsDetailPage({ params }: NewsDetailPageProps) {
                     <Eye className="w-4 h-4 text-neon-magenta" />
                     {(news.viewCount + 1).toLocaleString()} 次浏览
                   </span>
-                  <span className="text-neon-cyan/70">来源：{news.sourceName}</span>
+                  <span className="text-neon-cyan/70">来源：{news.sourceName}  </span>
+                  {news.sourceUrl && (
+                    <a
+                      href={news.sourceUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-neon-cyan hover:text-neon-magenta font-mono text-xs transition-colors"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                      阅读原文
+                    </a>
+                  )}
                 </div>
 
                 {/* Summary */}

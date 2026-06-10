@@ -22,8 +22,8 @@ async function translateSummary(text: string): Promise<string> {
   }
   
   try {
-    // 使用腾讯云 SDK
-    const tencentcloud = require('tencentcloud-sdk-nodejs-tmt')
+    // 使用腾讯云 SDK（动态 import 兼容 CJS/ESM）
+    const { default: tencentcloud } = await import('tencentcloud-sdk-nodejs-tmt')
     const TmtClient = tencentcloud.tmt.v20180321.Client
     
     const clientConfig = {
