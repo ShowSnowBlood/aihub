@@ -84,13 +84,13 @@ export default function SiteAnnouncement() {
               key={i}
               onClick={() => { setVisible(false); setTimeout(() => { setCurrent(i); setVisible(true) }, 300) }}
               title={`切换到第 ${i+1} 条公告`}
-              className={`transition-all duration-300 cursor-pointer ${
+              className={`transition-all duration-300 cursor-pointer w-5 h-5 flex items-center justify-center rounded-sm ${
                 i === current
-                  ? 'w-5 h-5 bg-neon-green text-cyber-background text-[10px] font-bold rounded-sm flex items-center justify-center'
-                  : 'w-2 h-2 rounded-full bg-cyber-muted-foreground/40 hover:bg-neon-green/60 hover:scale-125'
+                  ? 'bg-neon-green text-cyber-background text-[10px] font-bold'
+                  : 'bg-transparent text-cyber-muted-foreground/40 hover:text-neon-green/60 text-xs'
               }`}
             >
-              {i === current ? i + 1 : ''}
+              {i === current ? i + 1 : <span className="w-1.5 h-1.5 rounded-full bg-current" />}
             </button>
           ))}
         </div>
