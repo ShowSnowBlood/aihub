@@ -451,7 +451,7 @@ export default async function UserSharePage({ searchParams }: UserSharePageProps
         <div className="absolute top-0 left-1/4 w-96 h-96 bg-neon-green/10 rounded-full blur-3xl" />
         <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-neon-magenta/10 rounded-full blur-3xl" />
         
-        <div className="relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-12 pb-8">
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-12 pb-8">
           {/* 标题区域 */}
           <div className="text-center mb-10">
             <div className="inline-flex shadow-neon mb-4">
@@ -476,9 +476,31 @@ export default async function UserSharePage({ searchParams }: UserSharePageProps
       </div>
 
       {/* Content */}
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-12">
-        {/* 主布局：左侧内容 + 右侧边栏 */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12">
+        {/* 主布局：左侧广告 + 中间内容 + 右侧边栏 */}
         <div className="flex flex-col lg:flex-row gap-6">
+          {/* 左侧推广区域 */}
+          <div className="hidden lg:block w-64 flex-shrink-0">
+            <div className="sticky top-24 space-y-4">
+              <a
+                href="https://hero-sms.com/?ref=1256299"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block bg-cyber-card border border-neon-cyan/30 clip-chamfer p-4 relative overflow-hidden group hover:border-neon-cyan transition-colors"
+              >
+                <div className="absolute inset-0 bg-gradient-to-br from-neon-cyan/5 to-transparent" />
+                <div className="relative">
+                  <span className="text-xs px-2 py-0.5 bg-neon-cyan/20 text-neon-cyan font-mono border border-neon-cyan/30 inline-block mb-2" 
+                    style={{clipPath: 'polygon(0 3px, 3px 0, calc(100% - 3px) 0, 100% 3px, 100% calc(100% - 3px), calc(100% - 3px) 100%, 3px 100%, 0 calc(100% - 3px))'}}>
+                    推广
+                  </span>
+                  <h4 className="font-orbitron font-bold text-cyber-foreground text-sm mb-1">HeroSMS</h4>
+                  <p className="text-xs text-cyber-muted-foreground font-mono leading-relaxed">全球虚拟号码接码，注册海外服务必备</p>
+                </div>
+              </a>
+            </div>
+          </div>
+
           {/* 左侧主要内容 */}
           <div className="flex-1">
             {/* Tab 切换 */}
@@ -849,30 +871,6 @@ export default async function UserSharePage({ searchParams }: UserSharePageProps
 
             {/* 签到等级卡片 */}
             <SignInCard />
-
-            {/* 推荐服务 */}
-            <a
-              href="https://hero-sms.com/?ref=1256299"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block bg-cyber-card border border-neon-cyan/30 clip-chamfer p-6 relative overflow-hidden group hover:border-neon-cyan transition-colors"
-            >
-              <div className="absolute inset-0 bg-gradient-to-br from-neon-cyan/5 to-transparent" />
-              <div className="relative">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xs px-2 py-0.5 bg-neon-cyan/20 text-neon-cyan font-mono border border-neon-cyan/30" style={{clipPath: 'polygon(0 3px, 3px 0, calc(100% - 3px) 0, 100% 3px, 100% calc(100% - 3px), calc(100% - 3px) 100%, 3px 100%, 0 calc(100% - 3px))'}}>
-                    推广
-                  </span>
-                </div>
-                <h3 className="font-orbitron font-bold text-cyber-foreground mb-2 text-sm flex items-center gap-2">
-                  HeroSMS 虚拟号码
-                  <span className="text-neon-cyan group-hover:translate-x-1 transition-transform inline-block">→</span>
-                </h3>
-                <p className="text-xs text-cyber-muted-foreground font-mono leading-relaxed">
-                  注册 OpenAI、Telegram 等海外服务需要手机验证？HeroSMS 提供全球虚拟号码接码服务，快速、稳定、便宜。
-                </p>
-              </div>
-            </a>
 
             {/* 社区规则 */}
             <div className="bg-cyber-card border border-cyber-border clip-chamfer p-6 relative overflow-hidden">
