@@ -574,7 +574,7 @@ export default async function UserSharePage({ searchParams }: UserSharePageProps
           </div>
 
           {/* 左侧主要内容 */}
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             {/* Tab 切换 */}
             <div className="bg-cyber-card border border-cyber-border clip-chamfer p-2 mb-6">
               <div className="flex gap-1 overflow-x-auto scrollbar-none">
@@ -884,7 +884,7 @@ export default async function UserSharePage({ searchParams }: UserSharePageProps
           </div>
 
           {/* 右侧边栏 */}
-          <div className="w-full lg:w-80 space-y-6">
+          <div className="w-full lg:w-80 flex-shrink-0 space-y-6">
             {/* 快速操作卡片 */}
             <div className="bg-cyber-card border border-cyber-border clip-chamfer p-6">
               <h3 className="font-orbitron font-bold text-cyber-foreground mb-4 uppercase tracking-wider text-sm">
