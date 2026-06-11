@@ -850,6 +850,30 @@ export default async function UserSharePage({ searchParams }: UserSharePageProps
             {/* 签到等级卡片 */}
             <SignInCard />
 
+            {/* 推荐服务 */}
+            <a
+              href="https://hero-sms.com/?ref=1256299"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block bg-cyber-card border border-neon-cyan/30 clip-chamfer p-6 relative overflow-hidden group hover:border-neon-cyan transition-colors"
+            >
+              <div className="absolute inset-0 bg-gradient-to-br from-neon-cyan/5 to-transparent" />
+              <div className="relative">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs px-2 py-0.5 bg-neon-cyan/20 text-neon-cyan font-mono border border-neon-cyan/30" style={{clipPath: 'polygon(0 3px, 3px 0, calc(100% - 3px) 0, 100% 3px, 100% calc(100% - 3px), calc(100% - 3px) 100%, 3px 100%, 0 calc(100% - 3px))'}}>
+                    推广
+                  </span>
+                </div>
+                <h3 className="font-orbitron font-bold text-cyber-foreground mb-2 text-sm flex items-center gap-2">
+                  HeroSMS 虚拟号码
+                  <span className="text-neon-cyan group-hover:translate-x-1 transition-transform inline-block">→</span>
+                </h3>
+                <p className="text-xs text-cyber-muted-foreground font-mono leading-relaxed">
+                  注册 OpenAI、Telegram 等海外服务需要手机验证？HeroSMS 提供全球虚拟号码接码服务，快速、稳定、便宜。
+                </p>
+              </div>
+            </a>
+
             {/* 社区规则 */}
             <div className="bg-cyber-card border border-cyber-border clip-chamfer p-6 relative overflow-hidden">
               <div className="absolute inset-0 bg-gradient-to-br from-neon-green/5 to-transparent" />
