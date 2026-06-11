@@ -18,12 +18,11 @@ Disallow: /*?sort=
 # 爬取礼貌：每请求间隔 10 秒
 Crawl-Delay: 10
 
-# 首页 ISR 5分钟更新，让爬虫优先抓首页
+# 搜索引擎通用规则
 User-agent: Bingbot
-Crawl-Delay: 5
+Crawl-Delay: 10
 
-# Google bot
 User-agent: Googlebot
-Crawl-Delay: 5
+Crawl-Delay: 10
 
 Sitemap: https://ai999999.top/sitemap.xml
