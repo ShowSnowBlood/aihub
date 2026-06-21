@@ -1,4 +1,6 @@
 # AI Hub - 全球AI工具聚合平台
+![Uploading 图片.png…]()
+
 
 一个聚合全球AI工具、开源项目和AI资讯的平台，对标AIbase + 知乎模式。
 
