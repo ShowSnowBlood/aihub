@@ -91,7 +91,7 @@ export default async function ToolsPage({
       SELECT
         t.id, t.name, t.slug, t."shortDesc", t."logoUrl", t.stars, t."viewCount",
         t."websiteUrl", t."githubUrl", t."pricingType", t."isOpenSource", t.tags,
-        (SELECT COUNT(*) FROM user_like_tools WHERE tool_id = t.id) as "likeCount",
+        (SELECT COUNT(*) FROM user_like_tools WHERE "toolId" = t.id) as "likeCount",
         c.name as "categoryName", c.slug as "categorySlug",
         (${keywordScore}) as "relevanceScore"
       FROM tools t
@@ -153,11 +153,11 @@ export default async function ToolsPage({
     // 获取每个工具的点赞数
     if (tools.length > 0) {
       const toolIds = tools.map(t => t.id)
-      const likeCounts = await prisma.$queryRawUnsafe<Array<{tool_id: number; count: number}>>(
-        `SELECT tool_id, COUNT(*)::int as count FROM user_like_tools WHERE tool_id = ANY($1) GROUP BY tool_id`,
+      const likeCounts = await prisma.$queryRawUnsafe<Array<{toolId: number; count: number}>>(
+        `SELECT "toolId", COUNT(*)::int as count FROM user_like_tools WHERE "toolId" = ANY($1) GROUP BY "toolId"`,
         toolIds
       )
-      const likeMap = new Map(likeCounts.map(l => [l.tool_id, l.count]))
+      const likeMap = new Map(likeCounts.map(l => [l.toolId, l.count]))
       tools = (tools as any[]).map(t => ({
         ...t,
         upvotes: likeMap.get(t.id) || 0

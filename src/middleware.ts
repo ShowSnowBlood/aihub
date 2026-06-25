@@ -12,11 +12,21 @@ const SECURITY_HEADERS: Record<string, string> = {
   'Referrer-Policy': 'strict-origin-when-cross-origin',
 }
 
-// CORS 头（限制为本站域名，阻止外部网站跨域调用）
-const CORS_HEADERS: Record<string, string> = {
-  'Access-Control-Allow-Origin': 'https://ai999999.top',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+const ALLOWED_ORIGINS = new Set([
+  'https://ai999999.top',
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:3001',
+])
+
+function corsHeaders(request: NextRequest): Record<string, string> {
+  const origin = request.headers.get('origin') || ''
+  return {
+    'Access-Control-Allow-Origin': ALLOWED_ORIGINS.has(origin) ? origin : 'https://ai999999.top',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  }
 }
 
 // 内存限流
@@ -28,8 +38,11 @@ export function middleware(request: NextRequest) {
     || request.headers.get('x-real-ip')
     || '127.0.0.1'
   const userAgent = request.headers.get('user-agent') || ''
+  const host = request.nextUrl.hostname
   const now = Date.now()
   const windowMs = 60_000
+  const isLocalHost = host === 'localhost' || host === '127.0.0.1' || host === '::1'
+  const isLocalCollectorApi = isLocalHost && pathname.startsWith('/api/collector/')
 
   // 对可疑 User-Agent 直接拦截
   const dangerousUA = ['curl', 'wget', 'python-requests', 'Go-http-client', 'fasthttp', 'Scrapy', 'okhttp']
@@ -41,7 +54,7 @@ export function middleware(request: NextRequest) {
     dangerousUA.some(ua => userAgent.toLowerCase().includes(ua.toLowerCase()))
   )
 
-  if (isSuspicious) {
+  if (isSuspicious && !isLocalCollectorApi) {
     console.warn(`⚠️ 拦截可疑请求: ${ip} - ${pathname} - UA: ${userAgent.substring(0, 50)}`)
     return new NextResponse(
       JSON.stringify({ error: '请求被拒绝' }),
@@ -86,7 +99,7 @@ export function middleware(request: NextRequest) {
 
   // === CORS：处理 OPTIONS 预检请求 ===
   if (request.method === 'OPTIONS') {
-    return new NextResponse(null, { status: 204, headers: { ...CORS_HEADERS, ...SECURITY_HEADERS } })
+    return new NextResponse(null, { status: 204, headers: { ...corsHeaders(request), ...SECURITY_HEADERS } })
   }
 
   const isHF = userAgent.includes('HuggingFace') || request.headers.get('origin')?.includes('hf.space')
@@ -120,7 +133,7 @@ export function middleware(request: NextRequest) {
 
   const response = NextResponse.next()
   // 对 API 响应追加 CORS + 安全头
-  for (const [key, value] of Object.entries({ ...CORS_HEADERS, ...SECURITY_HEADERS })) {
+  for (const [key, value] of Object.entries({ ...corsHeaders(request), ...SECURITY_HEADERS })) {
     response.headers.set(key, value)
   }
   return response

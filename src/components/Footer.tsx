@@ -81,6 +81,7 @@ export default function Footer() {
               <li><Link href="/user-share" className="text-cyber-muted-foreground hover:text-neon-green transition-colors">用户分享</Link></li>
               <li><Link href="/trending" className="text-cyber-muted-foreground hover:text-neon-green transition-colors">趋势榜</Link></li>
               <li><Link href="/opensource" className="text-cyber-muted-foreground hover:text-neon-green transition-colors">开源项目</Link></li>
+              <li><Link href="/skills" className="text-cyber-muted-foreground hover:text-neon-green transition-colors">Skills</Link></li>
             </ul>
           </div>
 

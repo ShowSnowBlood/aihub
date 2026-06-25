@@ -8,6 +8,12 @@ function getDatabaseUrl() {
   return `${url}${separator}connection_limit=3`
 }
 
-export const prisma = new PrismaClient({
-  datasourceUrl: getDatabaseUrl()
+const globalForPrisma = globalThis as unknown as {
+  prisma?: PrismaClient
+}
+
+export const prisma = globalForPrisma.prisma ?? new PrismaClient({
+  datasourceUrl: getDatabaseUrl(),
 })
+
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma

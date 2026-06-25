@@ -287,6 +287,7 @@ export default function Navbar() {
     { href: '/trending', label: '趋势榜' },
     { href: '/leaderboard', label: '排行榜' },
     { href: '/opensource', label: '开源项目' },
+    { href: '/skills', label: 'Skills' },
   ]
 
   // 用户分享 - 独立高亮显示

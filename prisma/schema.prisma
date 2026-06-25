@@ -474,3 +474,213 @@ model Announcement {
 
   @@map("announcements")
 }
+
+model SkillResource {
+  id          Int      @id @default(autoincrement())
+  name        String
+  slug        String   @unique
+  description String?
+  category    String
+  sourceType  String   @default("local")
+  sourceName  String?
+  sourceUrl   String?
+  tags        String?
+  useCases    String?
+  inputSpec   String?
+  outputSpec  String?
+  maturity    String   @default("candidate")
+  score       Int      @default(0)
+  isFeatured  Boolean  @default(false)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([category])
+  @@index([sourceType])
+  @@map("skill_resources")
+}
+
+model ExternalSkill {
+  id             Int       @id @default(autoincrement())
+  sourceId       Int?
+  sourceSlug     String
+  externalId     String?
+  name           String
+  nameZh         String?
+  slug           String
+  description    String?
+  descriptionZh  String?
+  category       String?
+  categoryZh     String?
+  tags           String?
+  tagsZh         String?
+  useCases       String?
+  inputSpec      String?
+  outputSpec     String?
+  dependencySpec String?
+  example        String?
+  author         String?
+  license        String?
+  homepageUrl    String?
+  sourceUrl      String?
+  githubUrl      String?
+  downloadUrl    String?
+  language       String?
+  region         String?
+  status         String    @default("collected")
+  qualityScore   Int       @default(0)
+  heatScore      Int       @default(0)
+  stars          Int       @default(0)
+  forks          Int       @default(0)
+  downloads      Int       @default(0)
+  rawData        String    @default("{}")
+  fingerprint    String    @unique
+  publishedRef   String?
+  collectedAt    DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  source         CollectionSource? @relation(fields: [sourceId], references: [id])
+
+  @@index([sourceSlug])
+  @@index([status])
+  @@index([categoryZh])
+  @@index([qualityScore])
+  @@index([heatScore])
+  @@index([stars])
+  @@index([downloads])
+  @@map("external_skills")
+}
+
+model CollectionSource {
+  id             Int       @id @default(autoincrement())
+  name           String
+  slug           String    @unique
+  type           String
+  target         String
+  url            String?
+  config         String    @default("{}")
+  enabled        Boolean   @default(true)
+  priority       Int       @default(50)
+  language       String?
+  region         String?
+  category       String?
+  frequencyMins  Int       @default(1440)
+  alertThreshold Int       @default(3)
+  lastRunAt      DateTime?
+  lastSuccessAt  DateTime?
+  lastStatus     String    @default("idle")
+  lastError      String?
+  failCount      Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  runs           CollectionRun[]
+  candidates     CollectionCandidate[]
+  externalSkills ExternalSkill[]
+
+  @@index([type])
+  @@index([target])
+  @@index([enabled])
+  @@map("collection_sources")
+}
+
+model CollectionRun {
+  id             Int       @id @default(autoincrement())
+  sourceId       Int?
+  scope          String    @default("source")
+  status         String    @default("running")
+  startedAt      DateTime  @default(now())
+  finishedAt     DateTime?
+  candidateCount Int       @default(0)
+  publishedCount Int       @default(0)
+  ignoredCount   Int       @default(0)
+  errorMessage   String?
+  log            String?
+  source         CollectionSource? @relation(fields: [sourceId], references: [id])
+  candidates     CollectionCandidate[]
+
+  @@index([status])
+  @@index([startedAt])
+  @@map("collection_runs")
+}
+
+model CollectionCluster {
+  id        Int      @id @default(autoincrement())
+  title     String
+  slug      String   @unique
+  summary   String?
+  tags      String?
+  heatScore Int      @default(0)
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  candidates CollectionCandidate[]
+
+  @@index([heatScore])
+  @@map("collection_clusters")
+}
+
+model CollectionCandidate {
+  id              Int       @id @default(autoincrement())
+  sourceId        Int?
+  runId           Int?
+  clusterId       Int?
+  type            String
+  status          String    @default("pending")
+  title           String
+  normalizedTitle String
+  slug            String    @unique
+  sourceName      String?
+  author          String?
+  language        String?
+  region          String?
+  category        String?
+  sourceUrl       String?
+  canonicalUrl    String?
+  publishedAt     DateTime?
+  summary         String?
+  summaryZh       String?
+  highlights      String?
+  audience        String?
+  relatedSkills   String?
+  relatedAgents   String?
+  tags            String?
+  contentSnippet  String?
+  rawData         String    @default("{}")
+  fingerprint     String    @unique
+  score           Int       @default(0)
+  scoreDetail     String    @default("{}")
+  duplicateOfId   Int?
+  publishedRef    String?
+  reviewNote      String?
+  reviewedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  source          CollectionSource? @relation(fields: [sourceId], references: [id])
+  run             CollectionRun? @relation(fields: [runId], references: [id])
+  cluster         CollectionCluster? @relation(fields: [clusterId], references: [id])
+  duplicateOf     CollectionCandidate? @relation("CandidateDuplicates", fields: [duplicateOfId], references: [id])
+  duplicates      CollectionCandidate[] @relation("CandidateDuplicates")
+  reviewActions   CollectionReviewAction[]
+
+  @@index([type])
+  @@index([status])
+  @@index([score])
+  @@index([publishedAt])
+  @@index([sourceId])
+  @@map("collection_candidates")
+}
+
+model CollectionReviewAction {
+  id          Int      @id @default(autoincrement())
+  candidateId Int
+  action      String
+  note        String?
+  operator    String?
+  beforeData  String?
+  afterData   String?
+  createdAt   DateTime @default(now())
+  candidate   CollectionCandidate @relation(fields: [candidateId], references: [id])
+
+  @@index([candidateId])
+  @@index([action])
+  @@map("collection_review_actions")
+}

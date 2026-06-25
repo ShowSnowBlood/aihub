@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
         parseInt(toolId)
       ),
       prisma.$queryRawUnsafe<Array<any>>(
-        `SELECT COUNT(*) as total FROM user_like_tools WHERE tool_id = $1`,
+        `SELECT COUNT(*) as total FROM user_like_tools WHERE "toolId" = $1`,
         parseInt(toolId)
       )
     ])

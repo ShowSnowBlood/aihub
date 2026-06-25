@@ -1,3 +1,5 @@
+const isDev = process.env.NODE_ENV !== 'production'
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   images: {
@@ -16,12 +18,12 @@ const nextConfig = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline'",           // unsafe-eval 已移除
+              `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ''}`,
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "img-src 'self' data: blob: https:",
               "font-src 'self' https://fonts.gstatic.com",
-              "connect-src 'self' https:",
+              `connect-src 'self' https:${isDev ? ' ws: wss:' : ''}`,
               "frame-ancestors 'none'",                 // 禁止 iframe 嵌套
               "base-uri 'self'",                         // 防止 base 标签劫持
               "form-action 'self'",                      // 限制表单提交目标

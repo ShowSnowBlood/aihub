@@ -30,6 +30,20 @@ function stringToColor(str: string): string {
   return colors[Math.abs(hash) % colors.length]
 }
 
+function parseToolMeta(features: string | null) {
+  if (!features) return {} as { rank?: number; direction?: string; reason?: string }
+  try {
+    const parsed = JSON.parse(features)
+    return {
+      rank: typeof parsed.rank === 'number' ? parsed.rank : undefined,
+      direction: typeof parsed.direction === 'string' ? parsed.direction : undefined,
+      reason: typeof parsed.reason === 'string' ? parsed.reason : undefined,
+    }
+  } catch {
+    return {}
+  }
+}
+
 export default async function OpenSourcePage({ searchParams }: OpenSourcePageProps) {
   const lang = searchParams.lang as string | undefined
   const sort = searchParams.sort as string | undefined
@@ -50,7 +64,7 @@ export default async function OpenSourcePage({ searchParams }: OpenSourcePagePro
     where,
     include: { category: true },
     orderBy,
-    take: 50,
+    take: 100,
   })
 
   const totalCount = await prisma.tool.count({ where: { isActive: true, isOpenSource: true } })
@@ -116,7 +130,7 @@ export default async function OpenSourcePage({ searchParams }: OpenSourcePagePro
                 { value: totalCount, label: '开源工具', icon: Terminal },
                 { value: categoryList.length, label: '覆盖分类', icon: Cpu },
                 { value: '100%', label: '免费使用', icon: Star },
-                { value: '每日', label: '自动更新', icon: GitFork },
+                { value: 'Top 100', label: '可解释榜单', icon: GitFork },
               ].map((stat, i) => (
                 <div 
                   key={stat.label}
@@ -157,7 +171,9 @@ export default async function OpenSourcePage({ searchParams }: OpenSourcePagePro
             </div>
 
             <div className="space-y-4">
-              {tools.map((tool, index) => (
+              {tools.map((tool, index) => {
+                const meta = parseToolMeta(tool.features)
+                return (
                 <div
                   key={tool.id}
                   className="group relative"
@@ -174,7 +190,7 @@ export default async function OpenSourcePage({ searchParams }: OpenSourcePagePro
                           clipPath: 'polygon(0 4px, 4px 0, calc(100% - 4px) 0, 100% 4px, 100% calc(100% - 4px), calc(100% - 4px) 100%, 4px 100%, 0 calc(100% - 4px))'
                         }}
                       >
-                        {index + 1}
+                        {meta.rank || index + 1}
                       </div>
 
                       {/* Logo - 使用首字母彩色图标 */}
@@ -249,6 +265,20 @@ export default async function OpenSourcePage({ searchParams }: OpenSourcePagePro
                         {/* Description */}
                         <p className="text-cyber-muted-foreground mt-2 text-sm line-clamp-2">{tool.shortDesc}</p>
 
+                        {meta.reason && (
+                          <div className="mt-3 border-l-2 border-neon-cyan/60 pl-3">
+                            <div className="flex flex-wrap items-center gap-2 mb-1">
+                              {meta.direction && (
+                                <span className="px-2 py-0.5 text-xs border border-neon-cyan/40 text-neon-cyan font-mono">
+                                  {meta.direction}
+                                </span>
+                              )}
+                              <span className="text-xs text-cyber-muted-foreground font-mono">上榜理由</span>
+                            </div>
+                            <p className="text-xs text-cyber-muted-foreground line-clamp-2">{meta.reason}</p>
+                          </div>
+                        )}
+
                         {/* Tags */}
                         {tool.tags && (
                           <div className="flex flex-wrap gap-2 mt-3">
@@ -285,7 +315,7 @@ export default async function OpenSourcePage({ searchParams }: OpenSourcePagePro
                     </div>
                   </div>
                 </div>
-              ))}
+              )})}
             </div>
 
             {tools.length === 0 && (
