@@ -1654,7 +1654,17 @@ function parseVerifiedOnly(searchParams: URLSearchParams) {
     searchParams.get('clean') ||
     searchParams.get('stored_verified_only') ||
     ''
-  if (!raw) return false
+  if (!raw) {
+    const includeUnverified = searchParams.get('include_unverified') ||
+      searchParams.get('includeUnverified') ||
+      searchParams.get('all_candidates') ||
+      searchParams.get('allCandidates') ||
+      ''
+    if (includeUnverified) {
+      return ['0', 'false', 'off', 'no'].includes(includeUnverified.trim().toLowerCase())
+    }
+    return true
+  }
   return !['0', 'false', 'off', 'no', 'all'].includes(raw.trim().toLowerCase())
 }
 
