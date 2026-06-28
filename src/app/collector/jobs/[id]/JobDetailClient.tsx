@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
@@ -398,7 +398,7 @@ export default function JobDetailClient({ jobId }: { jobId: string }) {
                     <th className="px-3 py-3">Repo</th>
                     <th className="px-3 py-3">Score</th>
                     <th className="px-3 py-3">Stars</th>
-                    <th className="px-3 py-3">下载</th>
+                    <th className="px-3 py-3">安装/下载</th>
                     <th className="px-3 py-3">链接</th>
                   </tr>
                 </thead>
@@ -514,3 +514,4 @@ function OpenLink({ href }: { href: string }) {
     </a>
   )
 }
+

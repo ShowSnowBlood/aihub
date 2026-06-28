@@ -1,4 +1,4 @@
-import Link from 'next/link'
+﻿import Link from 'next/link'
 import {
   ArrowLeft,
   ArrowDown,
@@ -10,6 +10,7 @@ import {
   Filter,
   Github,
   Hash,
+  History,
   Search,
   ShieldCheck,
   Star,
@@ -300,6 +301,19 @@ function githubInfoFromSkill(skill: {
   return { repo, sourceRepo, repoUrl, installRepo, installGitUrl, preciseSourceUrl, skillPath, skillMdDescription, skillMdRawUrl, stars, forks, downloads }
 }
 
+function classifierInfoFromSkill(skill: { rawData?: string | null; categoryZh?: string | null; tagsZh?: string | null }) {
+  const raw = parseJson<Record<string, any>>(skill.rawData, {})
+  const classifier = raw.skillClassifier && typeof raw.skillClassifier === 'object' ? raw.skillClassifier : {}
+  return {
+    categoryZh: firstString(classifier.categoryZh, skill.categoryZh, '未分类'),
+    tagsZh: Array.isArray(classifier.tagsZh) ? classifier.tagsZh.map(String) : splitList(skill.tagsZh),
+    confidence: toNumber(classifier.confidence),
+    matchedKeywords: Array.isArray(classifier.matchedKeywords) ? classifier.matchedKeywords.map(String) : [],
+    capabilityHints: Array.isArray(classifier.capabilityHints) ? classifier.capabilityHints.map(String) : [],
+    classifiedAt: firstString(classifier.classifiedAt),
+  }
+}
+
 function pageHref(params: Record<string, string | number | undefined>, page: number) {
   const search = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
@@ -324,7 +338,7 @@ function normalizeSort(value?: string): SortKey {
   if (['id', 'score', 'heat', 'quality', 'stars', 'downloads', 'collected', 'updated'].includes(String(value))) {
     return value as SortKey
   }
-  return 'score'
+  return 'updated'
 }
 
 function normalizeDirection(value?: string): SortDirection {
@@ -357,7 +371,7 @@ function sortLabel(sort: SortKey) {
     heat: '热度分',
     quality: '质量分',
     stars: 'Star',
-    downloads: '下载量',
+    downloads: '安装/下载',
     collected: '采集时间',
     updated: '更新时间',
   }
@@ -487,12 +501,14 @@ export default async function CollectorSkillsPage({ searchParams = {} }: PagePro
   const q = String(searchParams.q || '').trim()
   const source = String(searchParams.source || '').trim()
   const category = String(searchParams.category || '').trim()
-  const status = String(searchParams.status || 'collected').trim()
+  const status = String(searchParams.status || 'all').trim()
   const sort = normalizeSort(searchParams.sort)
   const direction = normalizeDirection(searchParams.direction)
   const view = normalizeView(searchParams.view)
   const page = Math.max(1, Number(searchParams.page || 1) || 1)
   const pageSize = Math.min(100, Math.max(20, Number(searchParams.pageSize || 50) || 50))
+  const since5m = new Date(Date.now() - 5 * 60 * 1000)
+  const since30m = new Date(Date.now() - 30 * 60 * 1000)
 
   const where: any = {}
   if (source) where.sourceSlug = source
@@ -573,6 +589,21 @@ export default async function CollectorSkillsPage({ searchParams = {} }: PagePro
     _count: { _all: true },
     orderBy: { _count: { status: 'desc' } },
   })
+  const statusCountMap = new Map(statusGroups.map(item => [item.status, Number(item._count._all || 0)]))
+  const collectedSkillRows = statusCountMap.get('collected') || 0
+  const otherSkillRows = Math.max(0, totalSkillRows - collectedSkillRows)
+  const [recentCreated5m, recentUpdated5m, recentCreated30m, recentUpdated30m, latestSkillAggregate] = await Promise.all([
+    prisma.externalSkill.count({ where: { ...where, collectedAt: { gte: since5m } } }),
+    prisma.externalSkill.count({ where: { ...where, updatedAt: { gte: since5m } } }),
+    prisma.externalSkill.count({ where: { ...where, collectedAt: { gte: since30m } } }),
+    prisma.externalSkill.count({ where: { ...where, updatedAt: { gte: since30m } } }),
+    prisma.externalSkill.aggregate({ where, _max: { id: true } }),
+  ])
+  const latestSkillId = Number(latestSkillAggregate._max.id || 0)
+  const versionRows = await prisma.skillLibraryVersion.findMany({
+    orderBy: { id: 'desc' },
+    take: 6,
+  })
 
   const repoGroups = view === 'repo'
     ? repoGroupsFromSkills(repoSourceSkills as ExternalSkillRow[]).sort((a, b) => compareRepoGroups(a, b, sort, direction))
@@ -604,29 +635,75 @@ export default async function CollectorSkillsPage({ searchParams = {} }: PagePro
               </div>
               <h1 className="mt-3 text-2xl font-semibold tracking-tight text-white">所有 Skill 列表</h1>
               <p className="mt-3 max-w-4xl text-sm leading-6 text-zinc-400">
-                这里只查看清洗后的 Skill 原始库。每条记录都需要能解析到 GitHub 仓库地址；没有 GitHub 源仓库的数据会被清理命令移除。
+                这里只查看清洗后的 Skill 原始库，默认展示全部状态。每条记录都需要能解析到 GitHub 仓库地址；没有 GitHub 源仓库的数据会被清理命令移除。
               </p>
             </div>
 
-            <div className="grid gap-2 sm:grid-cols-3 xl:min-w-[380px]">
+            <div className="grid gap-2 sm:grid-cols-2 xl:min-w-[620px]">
               <Metric
-                label={view === 'repo' ? '仓库聚合数' : '当前 Skill 明细'}
+                label={view === 'repo' ? '仓库聚合数' : '全量 Skill 明细'}
                 value={formatNumber(total)}
-                note={view === 'repo' ? '同仓库自动合并' : '逐条 Skill 显示'}
+                note={view === 'repo' ? '同仓库自动合并' : '全量状态，增长看这里'}
               />
-              <Metric label="原始 Skill 明细" value={formatNumber(totalSkillRows)} note="采集增长看这里" />
-              <Metric label="总页数" value={`${formatNumber(totalPages)} 页`} note={`${formatNumber(pageSize)} 条/页`} />
+              <Metric label="collected" value={formatNumber(collectedSkillRows)} note="主入库状态" />
+              <Metric label="其他状态" value={formatNumber(otherSkillRows)} note="aggregated / low_quality / out_of_scope" />
+              <Metric label="5 分钟新增" value={`+${formatNumber(recentCreated5m)}`} note={`更新 ${formatNumber(recentUpdated5m)}`} />
+              <Metric label="30 分钟新增" value={`+${formatNumber(recentCreated30m)}`} note={`更新 ${formatNumber(recentUpdated30m)}`} />
+              <Metric label="最新 Skill ID" value={`#${formatNumber(latestSkillId)}`} note="数据库最大 ID" />
             </div>
           </div>
         </div>
       </header>
 
       <section className="border-b border-zinc-800 bg-[#0b0f14] px-5 py-4 lg:px-8">
+        <div className="mb-4 rounded-md border border-zinc-800 bg-zinc-950/50 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2 text-sm font-medium text-zinc-100">
+                <History className="h-4 w-4 text-cyan-300" />
+                Skill 知识库版本更新历史
+              </div>
+              <div className="mt-1 text-xs leading-5 text-zinc-500">
+                每次上传新版部署包都会生成一次 0.0.x 迭代，并记录当时 Skill、提示词和 AI 资讯数据快照。
+              </div>
+            </div>
+            <Link className="inline-flex h-8 items-center gap-1 rounded-md border border-cyan-500/50 bg-cyan-400/10 px-2.5 text-xs font-medium text-cyan-100 hover:border-cyan-300" href="/collector?page=deploy">
+              上传部署包
+              <ArrowUpRight className="h-3 w-3" />
+            </Link>
+          </div>
+          <div className="mt-3 grid gap-2 lg:grid-cols-3">
+            {versionRows.map(version => (
+              <div key={version.id} className="rounded-md border border-zinc-800 bg-[#0b0f14] px-3 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-mono text-sm text-cyan-200">{version.version}</span>
+                  <span className={`rounded-full border px-2 py-0.5 text-[11px] ${version.status === 'success' ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-200' : version.status === 'failed' ? 'border-red-400/40 bg-red-400/10 text-red-200' : version.status === 'deploying' ? 'border-cyan-400/40 bg-cyan-400/10 text-cyan-200' : 'border-amber-400/40 bg-amber-400/10 text-amber-200'}`}>
+                    {version.status === 'success' ? '已部署' : version.status === 'failed' ? '失败' : version.status === 'deploying' ? '部署中' : '排队'}
+                  </span>
+                </div>
+                <div className="mt-2 truncate text-xs text-zinc-400">{version.title || version.packageName || '-'}</div>
+                <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-zinc-500">
+                  <span>external {formatNumber(version.externalSkillCount)}</span>
+                  <span>published {formatNumber(version.skillCount)}</span>
+                  <span>prompt {formatNumber(version.promptCount)}</span>
+                  <span>news {formatNumber(version.newsCount)}</span>
+                </div>
+                <div className="mt-2 text-[11px] text-zinc-600">{formatDate(version.createdAt)}</div>
+              </div>
+            ))}
+            {versionRows.length === 0 && (
+              <div className="rounded-md border border-zinc-800 bg-[#0b0f14] px-3 py-6 text-sm text-zinc-500 lg:col-span-3">
+                还没有版本记录，去“部署包”页面上传第一个版本后会生成 0.0.1。
+              </div>
+            )}
+          </div>
+        </div>
+
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-cyan-400/20 bg-cyan-400/5 px-3 py-2 text-xs text-zinc-400">
           <div className="flex flex-wrap items-center gap-2">
             <CollectorPageAutoRefresh intervalMs={5000} />
             <span>
-              当前为 {view === 'repo' ? '仓库聚合模式' : 'Skill 明细模式'}：{view === 'repo' ? '页面行数只在发现新的 GitHub 仓库时增加，采集到同仓库的新 Skill 会合并进这一行。' : '每一条 external_skills 记录都会单独显示。'}
+              当前为 {view === 'repo' ? '仓库聚合模式' : 'Skill 明细模式'}：{view === 'repo' ? '页面行数只在发现新的 GitHub 仓库时增加，采集到同仓库的新 Skill 会合并进这一行。' : '每一条 external_skills 记录都会单独显示，默认是全量状态。'}
             </span>
           </div>
           {view === 'repo' ? (
@@ -673,7 +750,7 @@ export default async function CollectorSkillsPage({ searchParams = {} }: PagePro
             { label: '热度分', value: 'heat' },
             { label: '质量分', value: 'quality' },
             { label: 'Star', value: 'stars' },
-            { label: '下载量', value: 'downloads' },
+            { label: '安装/下载', value: 'downloads' },
             { label: '采集时间', value: 'collected' },
             { label: '更新时间', value: 'updated' },
           ]} />
@@ -722,7 +799,7 @@ export default async function CollectorSkillsPage({ searchParams = {} }: PagePro
                   <SortHeader label="Stars / Forks" field="stars" icon={Star} sort={sort} direction={direction} params={params} />
                 </th>
                 <th className="px-3 py-3">
-                  <SortHeader label="下载量" field="downloads" icon={Download} sort={sort} direction={direction} params={params} />
+                  <SortHeader label="安装/下载" field="downloads" icon={Download} sort={sort} direction={direction} params={params} />
                 </th>
                 <th className="px-3 py-3">分类</th>
                 <th className="px-3 py-3">标签</th>
@@ -802,7 +879,10 @@ export default async function CollectorSkillsPage({ searchParams = {} }: PagePro
                     <div className="font-mono text-xs text-zinc-200">{formatNumber(group.stars)} ★</div>
                     <div className="mt-1 font-mono text-[11px] text-zinc-500">{formatNumber(group.forks)} forks</div>
                   </td>
-                  <td className="px-3 py-4 font-mono text-xs text-zinc-200">{formatNumber(group.downloads)}</td>
+                  <td className="px-3 py-4">
+                    <div className="font-mono text-xs text-zinc-200">{formatNumber(group.downloads)}</div>
+                    <div className="mt-1 text-[11px] text-zinc-500">skills.sh installs / release</div>
+                  </td>
                   <td className="px-3 py-4 text-zinc-300">
                     <div className="space-y-1">
                       {group.categories.map(item => <div key={item}>{item}</div>)}
@@ -842,7 +922,7 @@ export default async function CollectorSkillsPage({ searchParams = {} }: PagePro
 
         {view === 'skill' && (
         <div className="overflow-x-auto rounded-md border border-zinc-800 bg-zinc-950/30">
-          <table className="w-full min-w-[1500px] text-left text-sm">
+          <table className="w-full min-w-[1640px] text-left text-sm">
             <thead className="bg-zinc-950 text-xs text-zinc-500">
               <tr className="border-b border-zinc-800">
                 <th className="px-3 py-3">
@@ -859,9 +939,9 @@ export default async function CollectorSkillsPage({ searchParams = {} }: PagePro
                   <SortHeader label="Stars / Forks" field="stars" icon={Star} sort={sort} direction={direction} params={params} />
                 </th>
                 <th className="px-3 py-3">
-                  <SortHeader label="下载量" field="downloads" icon={Download} sort={sort} direction={direction} params={params} />
+                  <SortHeader label="安装/下载" field="downloads" icon={Download} sort={sort} direction={direction} params={params} />
                 </th>
-                <th className="px-3 py-3">分类</th>
+                <th className="px-3 py-3">分类依据</th>
                 <th className="px-3 py-3">标签</th>
                 <th className="px-3 py-3">状态</th>
                 <th className="px-3 py-3">
@@ -872,6 +952,7 @@ export default async function CollectorSkillsPage({ searchParams = {} }: PagePro
             <tbody>
               {sortedSkills.map(skill => {
                 const github = githubInfoFromSkill(skill)
+                const classifier = classifierInfoFromSkill(skill)
                 return (
                   <tr key={skill.id} className="border-b border-zinc-900 align-top">
                     <td className="px-3 py-3 font-mono text-xs text-zinc-500">#{skill.id}</td>
@@ -931,15 +1012,26 @@ export default async function CollectorSkillsPage({ searchParams = {} }: PagePro
                     <td className="px-3 py-3">
                       <div className="font-mono text-xs text-zinc-200">{formatNumber(github.stars)} ★</div>
                       <div className="mt-1 font-mono text-[11px] text-zinc-500">{formatNumber(github.forks)} forks</div>
+                      {github.stars === 0 && <div className="mt-1 text-[11px] text-amber-300">待 GitHub 同步</div>}
                     </td>
-                    <td className="px-3 py-3 font-mono text-xs text-zinc-200">{formatNumber(github.downloads)}</td>
-                    <td className="px-3 py-3 text-zinc-300">{skill.categoryZh || '未分类'}</td>
+                    <td className="px-3 py-3">
+                      <div className="font-mono text-xs text-zinc-200">{formatNumber(github.downloads)}</div>
+                      <div className="mt-1 text-[11px] text-zinc-500">skills.sh installs / release</div>
+                    </td>
+                    <td className="px-3 py-3 text-zinc-300">
+                      <div>{classifier.categoryZh}</div>
+                      <div className="mt-1 font-mono text-[11px] text-cyan-300">confidence {formatNumber(classifier.confidence)}</div>
+                      <div className="mt-1 max-w-[240px] text-[11px] leading-4 text-zinc-500">{classifier.matchedKeywords.slice(0, 5).join(' / ') || '待运行 reclassify 回填解释'}</div>
+                    </td>
                     <td className="px-3 py-3">
                       <div className="flex max-w-[240px] flex-wrap gap-1">
-                        {splitList(skill.tagsZh).slice(0, 4).map(tag => (
+                        {classifier.tagsZh.slice(0, 4).map((tag: string) => (
                           <span key={tag} className="rounded border border-zinc-800 bg-zinc-900 px-2 py-0.5 text-[11px] text-zinc-400">{tag}</span>
                         ))}
                       </div>
+                      {classifier.capabilityHints.length > 0 ? (
+                        <div className="mt-1 text-[11px] text-emerald-300">能力池反哺</div>
+                      ) : null}
                     </td>
                     <td className="px-3 py-3">
                       <span className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-300">{skill.status}</span>
@@ -1033,3 +1125,4 @@ function PageLink({ href, label, disabled }: { href: string; label: string; disa
     </Link>
   )
 }
+

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Activity, ArrowUpRight, CheckCircle2, Database, Github, RefreshCw, Search, ShieldCheck } from 'lucide-react'
 import type { SkillsShLiveData } from './SkillsShLiveProgress'
@@ -38,11 +38,20 @@ type DaemonEvents = {
 }
 
 type OverviewLiveData = SkillsShLiveData & {
+  externalSkillTotal?: number
   githubPythonCrawlerTotal: number
   githubCybersecurityTotal: number
   githubPythonCrawlerState: IndexState
   githubCybersecurityState: IndexState
   daemonEvents: DaemonEvents
+  recentActivity?: {
+    externalCreated5m: number
+    externalUpdated5m: number
+    externalCreated30m: number
+    externalUpdated30m: number
+    skillResourceUpdated5m: number
+    skillResourceUpdated30m: number
+  }
 }
 
 type Props = {
@@ -96,8 +105,11 @@ export default function CollectorOverviewLivePanel({ initialData }: Props) {
   const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [error, setError] = useState('')
+  const loadingRef = useRef(false)
 
   async function load() {
+    if (loadingRef.current) return
+    loadingRef.current = true
     setIsRefreshing(true)
     try {
       const response = await fetch('/api/collector/skills-sh-live', { cache: 'no-store' })
@@ -109,6 +121,7 @@ export default function CollectorOverviewLivePanel({ initialData }: Props) {
     } catch (err) {
       setError(err instanceof Error ? err.message : '总览实时状态刷新失败')
     } finally {
+      loadingRef.current = false
       setIsRefreshing(false)
     }
   }
@@ -117,14 +130,23 @@ export default function CollectorOverviewLivePanel({ initialData }: Props) {
     void load()
     const timer = window.setInterval(() => {
       if (document.visibilityState === 'visible') void load()
-    }, 3000)
+    }, 5000)
     return () => window.clearInterval(timer)
   }, [])
 
   const finishedSources = data.daemonEvents?.latestFinishedSources || []
   const currentSource = data.daemonEvents?.currentSource || ''
   const currentSourceRunning = data.daemonEvents?.currentSourceEvent === 'source-start'
-  const totalExternalSkills = data.skillsShSearchTotal + data.skillsShGithubTotal + data.githubGlobalIndexTotal + data.githubPythonCrawlerTotal + data.githubCybersecurityTotal + data.skillsShTotal + data.skillsShBrowserTotal
+  const groupedExternalSkills = data.skillsShSearchTotal + data.skillsShGithubTotal + data.githubGlobalIndexTotal + data.githubPythonCrawlerTotal + data.githubCybersecurityTotal + data.skillsShTotal + data.skillsShBrowserTotal
+  const totalExternalSkills = Number(data.externalSkillTotal || groupedExternalSkills)
+  const recentActivity = data.recentActivity || {
+    externalCreated5m: 0,
+    externalUpdated5m: 0,
+    externalCreated30m: 0,
+    externalUpdated30m: 0,
+    skillResourceUpdated5m: 0,
+    skillResourceUpdated30m: 0,
+  }
 
   const sourceRows = useMemo(() => [
     { label: 'skills.sh 搜索扩量', value: data.skillsShSearchTotal, note: `Query ${data.skillsShSearchState.nextQueryIndex}/${data.skillsShSearchState.queryCount}` },
@@ -143,7 +165,7 @@ export default function CollectorOverviewLivePanel({ initialData }: Props) {
             <Activity className="h-4 w-4 text-cyan-300" />
             <div>
               <div className="font-medium text-zinc-100">实时采集驾驶舱</div>
-              <div className="mt-0.5 text-xs text-zinc-500">GitHub 全网和 skills.sh 常驻同步状态，每 3 秒刷新。</div>
+              <div className="mt-0.5 text-xs text-zinc-500">GitHub 全网和 skills.sh 常驻同步状态，每 5 秒刷新。</div>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -181,9 +203,19 @@ export default function CollectorOverviewLivePanel({ initialData }: Props) {
 
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
               <MiniMetric icon={Database} label="外部 Skill 入库" value={formatNumber(totalExternalSkills)} />
+              <MiniMetric icon={Search} label="skills.sh 当前视图 Skill" value={formatNumber(data.publicVisibleTotal)} />
               <MiniMetric icon={CheckCircle2} label="同步原技能库" value={formatNumber(data.skillResourceTotal)} />
               <MiniMetric icon={Github} label="GitHub 源仓库池" value={`${formatNumber(data.githubSourceState.nextRepoIndex)}/${formatNumber(data.githubSourceState.repoCount)}`} />
-              <MiniMetric icon={Search} label="skills.sh All Time" value={formatNumber(data.installSignalTotal)} />
+              <MiniMetric icon={Search} label="All Time 累计安装" value={formatNumber(data.installSignalTotal)} />
+            </div>
+
+            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+              <MiniMetric icon={Database} label="5 分钟新增 Skill" value={`+${formatNumber(recentActivity.externalCreated5m)}`} />
+              <MiniMetric icon={RefreshCw} label="5 分钟更新 Skill" value={formatNumber(recentActivity.externalUpdated5m)} />
+              <MiniMetric icon={CheckCircle2} label="5 分钟同步资源" value={formatNumber(recentActivity.skillResourceUpdated5m)} />
+              <MiniMetric icon={Database} label="30 分钟新增 Skill" value={`+${formatNumber(recentActivity.externalCreated30m)}`} />
+              <MiniMetric icon={RefreshCw} label="30 分钟更新 Skill" value={formatNumber(recentActivity.externalUpdated30m)} />
+              <MiniMetric icon={CheckCircle2} label="30 分钟同步资源" value={formatNumber(recentActivity.skillResourceUpdated30m)} />
             </div>
 
             {data.daemonEvents?.latestSync && (
@@ -191,6 +223,9 @@ export default function CollectorOverviewLivePanel({ initialData }: Props) {
                 上轮同步：扫描 {formatNumber(data.daemonEvents.latestSync.scannedExternalSkills)} 条，聚合 {formatNumber(data.daemonEvents.latestSync.repos)} 个源仓库，创建 {formatNumber(data.daemonEvents.latestSync.created)} 个，更新 {formatNumber(data.daemonEvents.latestSync.updated)} 个。
               </div>
             )}
+            <div className="mt-3 rounded-md border border-zinc-800 bg-zinc-950/50 p-3 text-xs leading-5 text-zinc-500">
+              skills.sh 的 All Time 是全站累计安装量，不是唯一 Skill 数。当前视图 Skill 来自 skills.sh 页面 payload 的 totalSkills；本地外部 Skill 入库会包含搜索扩量和 GitHub 源扩采，所以通常会大于当前视图数。
+            </div>
           </div>
 
           <div className="rounded-md border border-zinc-800 bg-[#0b0f14] p-4">

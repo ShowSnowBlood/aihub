@@ -6,6 +6,7 @@ import { RefreshCw } from 'lucide-react'
 
 type Props = {
   intervalMs?: number
+  enabled?: boolean
 }
 
 function formatTime(value?: string | null) {
@@ -19,12 +20,13 @@ function formatTime(value?: string | null) {
   })
 }
 
-export default function CollectorPageAutoRefresh({ intervalMs = 15000 }: Props) {
+export default function CollectorPageAutoRefresh({ intervalMs = 60000, enabled = true }: Props) {
   const router = useRouter()
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null)
   const [isSyncing, setIsSyncing] = useState(false)
 
   useEffect(() => {
+    if (!enabled) return
     let cancelled = false
     const sync = () => {
       if (document.visibilityState !== 'visible') return
@@ -43,7 +45,9 @@ export default function CollectorPageAutoRefresh({ intervalMs = 15000 }: Props) 
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [intervalMs, router])
+  }, [enabled, intervalMs, router])
+
+  if (!enabled) return null
 
   return (
     <span className="inline-flex h-9 items-center gap-2 rounded-md border border-zinc-700 bg-zinc-950/50 px-3 text-xs text-zinc-400">

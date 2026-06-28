@@ -5,7 +5,9 @@ import {
   Activity,
   AlertTriangle,
   ArrowUpRight,
+  BrainCircuit,
   Bot,
+  BarChart3,
   CheckCircle2,
   Clock3,
   Database,
@@ -15,6 +17,7 @@ import {
   Globe2,
   Layers3,
   ListChecks,
+  PackageCheck,
   Play,
   RefreshCw,
   Search,
@@ -28,14 +31,22 @@ import {
   Flame,
   Star,
   FileText,
+  Table2,
+  TrendingUp,
 } from 'lucide-react'
 import { collectorCommandSpecs, ensureCollectorJobRunning, listCollectorJobs } from '@/lib/collector-runner'
+import { readDeepSeekGrowthPlan } from '@/lib/deepseek-orchestrator'
+import { getDeepSeekConfigStatus, loadLocalDeepSeekConfig } from '@/lib/deepseek-config'
+import { getKnowledgeVectorStats, type KnowledgeVectorStats } from '@/lib/knowledge-vector'
 import { prisma } from '@/lib/prisma'
+import CollectorCoreTables, { type CollectorCoreTablesData } from './CollectorCoreTables'
 import CollectorCommandCenter from './CollectorCommandCenter'
 import CollectorCommandRunButton from './CollectorCommandRunButton'
+import DeploymentPackagePanel, { type DeploymentVersion } from './DeploymentPackagePanel'
 import CollectorLiveSources, { type CollectorLiveSourcesData } from './CollectorLiveSources'
 import CollectorOverviewLivePanel from './CollectorOverviewLivePanel'
 import CollectorPageAutoRefresh from './CollectorPageAutoRefresh'
+import CollectorSwitchNav from './CollectorSwitchNav'
 import CollectorRunButton from './CollectorRunButton'
 import SkillsShLiveProgress, { type SkillsShLiveData } from './SkillsShLiveProgress'
 
@@ -48,6 +59,7 @@ export const dynamic = 'force-dynamic'
 
 type CollectorSwitchPage =
   | 'overview'
+  | 'core'
   | 'command'
   | 'skills-sh'
   | 'ai-news'
@@ -57,6 +69,8 @@ type CollectorSwitchPage =
   | 'runs'
   | 'skills'
   | 'capabilities'
+  | 'deepseek'
+  | 'deploy'
 
 type PageProps = {
   searchParams?: {
@@ -71,6 +85,7 @@ const switchPages: Array<{
   description: string
 }> = [
   { page: 'overview', label: '总览', icon: Gauge, description: '核心数量、入口和运行边界' },
+  { page: 'core', label: '核心表', icon: Table2, description: 'Skill、提示词、AI 资讯三张主表' },
   { page: 'command', label: '本地控制台', icon: Terminal, description: '发送指令、停止任务、查看日志' },
   { page: 'skills-sh', label: 'skills.sh', icon: RefreshCw, description: '慢爬进度、断点和源扩采' },
   { page: 'ai-news', label: 'AI 资讯', icon: Newspaper, description: '资讯源、热点聚类和候选' },
@@ -80,10 +95,12 @@ const switchPages: Array<{
   { page: 'runs', label: '任务监控', icon: Activity, description: '最近任务、失败源和维护动作' },
   { page: 'skills', label: 'Skill 原始库', icon: Database, description: '原始 Skill、审核和发布候选' },
   { page: 'capabilities', label: '能力画像', icon: Fingerprint, description: '爬虫与安全 Skill 反哺采集' },
+  { page: 'deepseek', label: 'DeepSeek 增强', icon: BrainCircuit, description: '知识库、增长计划和采集调度' },
+  { page: 'deploy', label: '部署包', icon: PackageCheck, description: '上传部署包、自动重建和版本迭代历史' },
 ]
 
 const quickLinks = [
-  { href: '/collector/settings', label: 'GitHub 配置', icon: Github },
+  { href: '/collector/settings', label: '采集配置', icon: Github },
   { href: '/collector/skills', label: '所有 Skill', icon: Database },
 ]
 
@@ -99,6 +116,7 @@ type BrowserState = {
   seen?: string[]
   runs?: Array<Record<string, any>>
   pages?: Record<string, any>
+  discoveredPages?: Array<Record<string, any>>
   totals?: Record<string, number>
   liveStats?: {
     totalSkills?: number
@@ -107,6 +125,8 @@ type BrowserState = {
   }
   lastRunAt?: string
   lastSeenCount?: number
+  nextUrlIndex?: number
+  nextUrlIndexUpdatedAt?: string
 }
 
 type SkillsShLiveStats = {
@@ -169,8 +189,42 @@ type CapabilityProfile = {
   generatedAt?: string
   topKeywords?: Array<{ value: string; count: number }>
   topRepos?: Array<{ repo: string; count: number; stars: number; sourceUrl?: string }>
+  codeQueries?: string[]
+  repoQueries?: string[]
+  topicKeywords?: string[]
   toolHints?: string[]
   safeModeHints?: string[]
+}
+
+type CapabilityHistoryProfile = {
+  sourceSlug?: string
+  label?: string
+  skillCount?: number
+  activeSkillCount?: number
+  repoCount?: number
+  queryCount?: number
+  keywordCount?: number
+}
+
+type CapabilityHistoryEntry = {
+  generatedAt?: string
+  totalProfiles?: number
+  totalSkills?: number
+  totalActiveSkills?: number
+  totalRepos?: number
+  totalQueries?: number
+  totalKeywords?: number
+  profiles?: Record<string, CapabilityHistoryProfile>
+}
+
+type CapabilityUsage = {
+  totalProfiles: number
+  totalSkills: number
+  totalActiveSkills: number
+  totalRepos: number
+  totalCodeQueries: number
+  totalRepoQueries: number
+  totalTopicKeywords: number
 }
 
 type ToolCapabilityState = {
@@ -180,6 +234,7 @@ type ToolCapabilityState = {
     notes?: string[]
   }
   profiles?: Record<string, CapabilityProfile>
+  history?: CapabilityHistoryEntry[]
 }
 
 function trim(value?: string | null, size = 90) {
@@ -356,6 +411,19 @@ function githubInfoFromSkill(skill: {
   return { repo, repoUrl, installGitUrl, sourceUrl, skillPath, stars, forks, downloads, latestReleaseUrl }
 }
 
+function classifierInfoFromSkill(skill: { rawData?: string | null; categoryZh?: string | null; tagsZh?: string | null }) {
+  const raw = parseJson<Record<string, any>>(skill.rawData, {})
+  const classifier = raw.skillClassifier && typeof raw.skillClassifier === 'object' ? raw.skillClassifier : {}
+  return {
+    categoryZh: firstString(classifier.categoryZh, skill.categoryZh, '未分类'),
+    tagsZh: Array.isArray(classifier.tagsZh) ? classifier.tagsZh.map(String) : splitList(skill.tagsZh),
+    confidence: toNumber(classifier.confidence),
+    matchedKeywords: Array.isArray(classifier.matchedKeywords) ? classifier.matchedKeywords.map(String) : [],
+    capabilityHints: Array.isArray(classifier.capabilityHints) ? classifier.capabilityHints.map(String) : [],
+    classifiedAt: firstString(classifier.classifiedAt),
+  }
+}
+
 function percent(value: number, total: number) {
   if (!total) return '0%'
   return `${Math.min(100, (value / total) * 100).toFixed(1)}%`
@@ -444,6 +512,104 @@ function readToolCapabilityState(): ToolCapabilityState {
     return JSON.parse(readFileSync(filePath, 'utf8')) as ToolCapabilityState
   } catch {
     return {}
+  }
+}
+
+function capabilityUsage(profiles: Array<CapabilityProfile | undefined>): CapabilityUsage {
+  return profiles.reduce<CapabilityUsage>((acc, profile) => {
+    if (!profile) return acc
+    acc.totalProfiles += 1
+    acc.totalSkills += Number(profile.skillCount || 0)
+    acc.totalActiveSkills += Number(profile.activeSkillCount || 0)
+    acc.totalRepos += Number(profile.repoCount || 0)
+    acc.totalCodeQueries += Number(profile.codeQueries?.length || 0)
+    acc.totalRepoQueries += Number(profile.repoQueries?.length || 0)
+    acc.totalTopicKeywords += Number(profile.topicKeywords?.length || 0)
+    return acc
+  }, {
+    totalProfiles: 0,
+    totalSkills: 0,
+    totalActiveSkills: 0,
+    totalRepos: 0,
+    totalCodeQueries: 0,
+    totalRepoQueries: 0,
+    totalTopicKeywords: 0,
+  })
+}
+
+function capabilitySnapshotFromProfiles(generatedAt: string | undefined, profiles: Record<string, CapabilityProfile> = {}): CapabilityHistoryEntry | undefined {
+  const values = Object.values(profiles)
+  if (values.length === 0) return undefined
+  return {
+    generatedAt,
+    totalProfiles: values.length,
+    totalSkills: values.reduce((sum, profile) => sum + Number(profile.skillCount || 0), 0),
+    totalActiveSkills: values.reduce((sum, profile) => sum + Number(profile.activeSkillCount || 0), 0),
+    totalRepos: values.reduce((sum, profile) => sum + Number(profile.repoCount || 0), 0),
+    totalQueries: values.reduce((sum, profile) => sum + Number(profile.queryCount || 0), 0),
+    totalKeywords: values.reduce((sum, profile) => sum + Number(profile.keywordCount || 0), 0),
+    profiles: Object.fromEntries(values.map(profile => [
+      String(profile.sourceSlug || ''),
+      {
+        sourceSlug: profile.sourceSlug,
+        label: profile.label,
+        skillCount: profile.skillCount,
+        activeSkillCount: profile.activeSkillCount,
+        repoCount: profile.repoCount,
+        queryCount: profile.queryCount,
+        keywordCount: profile.keywordCount,
+      },
+    ]).filter(([sourceSlug]) => sourceSlug)),
+  }
+}
+
+function capabilityHistoryValue(entry: CapabilityHistoryEntry | undefined, key: keyof CapabilityHistoryEntry) {
+  return Number(entry?.[key] || 0)
+}
+
+function capabilityDelta(current: CapabilityHistoryEntry | undefined, previous: CapabilityHistoryEntry | undefined, key: keyof CapabilityHistoryEntry) {
+  return capabilityHistoryValue(current, key) - capabilityHistoryValue(previous, key)
+}
+
+function capabilityProfileDelta(current: CapabilityHistoryEntry | undefined, previous: CapabilityHistoryEntry | undefined, sourceSlug: string, key: keyof CapabilityHistoryProfile) {
+  return Number(current?.profiles?.[sourceSlug]?.[key] || 0) - Number(previous?.profiles?.[sourceSlug]?.[key] || 0)
+}
+
+function signedNumber(value: number) {
+  if (value > 0) return `+${formatNumber(value)}`
+  if (value < 0) return `-${formatNumber(Math.abs(value))}`
+  return '0'
+}
+
+function deploymentStatusLabel(status: string) {
+  if (status === 'success') return '已部署'
+  if (status === 'deploying') return '部署中'
+  if (status === 'queued') return '排队中'
+  if (status === 'failed') return '失败'
+  return '已上传'
+}
+
+function serializeDeploymentVersion(row: any): DeploymentVersion {
+  return {
+    id: row.id,
+    version: row.version,
+    title: row.title,
+    status: row.status,
+    statusLabel: deploymentStatusLabel(row.status),
+    packageName: row.packageName,
+    packageSize: row.packageSize,
+    checksum: row.checksum,
+    notes: row.notes,
+    operator: row.operator,
+    jobId: row.jobId,
+    skillCount: row.skillCount,
+    externalSkillCount: row.externalSkillCount,
+    promptCount: row.promptCount,
+    newsCount: row.newsCount,
+    startedAt: row.startedAt?.toISOString?.() || null,
+    finishedAt: row.finishedAt?.toISOString?.() || null,
+    createdAt: row.createdAt?.toISOString?.() || null,
+    updatedAt: row.updatedAt?.toISOString?.() || null,
   }
 }
 
@@ -553,9 +719,18 @@ const scopedSourceWhere = {
 }
 
 const scopedSkillSourceWhere = {
-  OR: [
-    { sourceSlug: { contains: 'github' } },
-    { sourceSlug: { contains: 'skills-sh' } },
+  AND: [
+    {
+      OR: [
+        { sourceSlug: { contains: 'github' } },
+        { sourceSlug: { contains: 'skills-sh' } },
+      ],
+    },
+    {
+      status: {
+        notIn: ['ignored', 'low_quality', 'out_of_scope', 'needs_source', 'aggregated_source'],
+      },
+    },
   ],
 }
 
@@ -571,6 +746,26 @@ const scopedCandidateWhere = {
 export default async function CollectorPage({ searchParams = {} }: PageProps) {
   const activePage = normalizeSwitchPage(searchParams.page)
   const activePageMeta = switchPages.find(item => item.page === activePage) || switchPages[0]
+  const showOverview = activePage === 'overview'
+  const showCore = activePage === 'core'
+  const showSkillsSh = activePage === 'skills-sh'
+  const showAiNews = activePage === 'ai-news'
+  const showPrompts = activePage === 'prompts'
+  const showSources = activePage === 'sources'
+  const showTools = activePage === 'tools'
+  const showRuns = activePage === 'runs'
+  const showSkills = activePage === 'skills'
+  const showCapabilities = activePage === 'capabilities'
+  const showDeepSeek = activePage === 'deepseek'
+  const showDeploy = activePage === 'deploy'
+  const needsSkillCounts = showOverview || showCore || showSkillsSh || showSources || showTools || showSkills || showCapabilities || showDeepSeek
+  const needsSkillQualityCounts = showOverview || showCapabilities
+  const needsSourceGroups = showOverview || showCore || showSources || showAiNews || showPrompts
+  const needsSkillSourceGroups = showOverview || showSkillsSh || showSources || showTools || showCapabilities
+  const needsNewsCounts = showOverview || showCore || showAiNews || showTools || showDeepSeek
+  const needsPromptCounts = showOverview || showCore || showPrompts || showTools || showDeepSeek
+  const needsRunData = showOverview || showRuns
+  const needsDeploymentVersions = showOverview || showDeploy || showSkills
 
   let sourceCount = 0
   let enabledSourceCount = 0
@@ -578,6 +773,9 @@ export default async function CollectorPage({ searchParams = {} }: PageProps) {
   let externalSkillCount = 0
   let publishedSkillCount = 0
   let linkedExternalSkillCount = 0
+  let githubTraceSkillCount = 0
+  let categoryCoveredSkillCount = 0
+  let classifierExplainedSkillCount = 0
   let sourceGroups: any[] = []
   let skillSourceGroups: any[] = []
   let categoryGroups: any[] = []
@@ -591,12 +789,21 @@ export default async function CollectorPage({ searchParams = {} }: PageProps) {
   let candidates: any[] = []
   let hotClusters: any[] = []
   let failedSources: any[] = []
+  let knowledgeStats: KnowledgeVectorStats = {
+    total: 0,
+    byScope: [],
+    bySourceType: [],
+    updatedAt: null,
+  }
+  let deploymentVersions: DeploymentVersion[] = []
   let databaseOffline = false
   let databaseError = ''
 
   let collectorJobs = await listCollectorJobs(12)
   let skillsShDaemonJob = collectorJobs.find(job => job.commandId === 'skills-sh-daemon' && job.status === 'running')
   let skillsShDaemonStarted = false
+  let promptDaemonJob = collectorJobs.find(job => job.commandId === 'prompt-library-daemon' && job.status === 'running')
+  let promptDaemonStarted = false
 
   try {
     ;[
@@ -606,6 +813,9 @@ export default async function CollectorPage({ searchParams = {} }: PageProps) {
       externalSkillCount,
       publishedSkillCount,
       linkedExternalSkillCount,
+      githubTraceSkillCount,
+      categoryCoveredSkillCount,
+      classifierExplainedSkillCount,
       sourceGroups,
       skillSourceGroups,
       categoryGroups,
@@ -619,44 +829,66 @@ export default async function CollectorPage({ searchParams = {} }: PageProps) {
       candidates,
       hotClusters,
       failedSources,
+      knowledgeStats,
+      deploymentVersions,
     ] = await withTimeout(Promise.all([
       prisma.collectionSource.count({ where: { enabled: true, ...scopedSourceWhere } }),
       prisma.collectionSource.count({ where: { enabled: true, ...scopedSourceWhere } }),
-      prisma.collectionCandidate.count({ where: { status: 'pending', ...scopedCandidateWhere } }),
-      prisma.externalSkill.count({ where: scopedSkillSourceWhere }),
-      prisma.skillResource.count(),
-      prisma.externalSkill.count({ where: { ...scopedSkillSourceWhere, publishedRef: { not: null } } }),
-      prisma.collectionSource.groupBy({
+      showOverview ? prisma.collectionCandidate.count({ where: { status: 'pending', ...scopedCandidateWhere } }) : Promise.resolve(0),
+      needsSkillCounts ? prisma.externalSkill.count({ where: scopedSkillSourceWhere }) : Promise.resolve(0),
+      needsSkillCounts ? prisma.skillResource.count() : Promise.resolve(0),
+      needsSkillCounts ? prisma.externalSkill.count({ where: { ...scopedSkillSourceWhere, publishedRef: { not: null } } }) : Promise.resolve(0),
+      needsSkillQualityCounts ? prisma.externalSkill.count({
+        where: {
+          AND: [
+            scopedSkillSourceWhere,
+            {
+              OR: [
+                { githubUrl: { contains: 'github.com', mode: 'insensitive' } },
+                { sourceUrl: { contains: 'github.com', mode: 'insensitive' } },
+                { homepageUrl: { contains: 'github.com', mode: 'insensitive' } },
+                { downloadUrl: { contains: 'github.com', mode: 'insensitive' } },
+                { rawData: { contains: '"repo"' } },
+                { rawData: { contains: '"originalRepo"' } },
+                { rawData: { contains: '"sourceRepo"' } },
+              ],
+            },
+          ],
+        },
+      }) : Promise.resolve(0),
+      needsSkillQualityCounts ? prisma.externalSkill.count({ where: { ...scopedSkillSourceWhere, categoryZh: { not: null } } }) : Promise.resolve(0),
+      needsSkillQualityCounts ? prisma.externalSkill.count({ where: { AND: [scopedSkillSourceWhere, { rawData: { contains: '"skillClassifier"' } }] } }) : Promise.resolve(0),
+      needsSourceGroups ? prisma.collectionSource.groupBy({
         by: ['target', 'enabled'],
         where: { enabled: true, ...scopedSourceWhere },
         _count: { _all: true },
         orderBy: [{ target: 'asc' }, { enabled: 'desc' }],
-      }),
-      prisma.externalSkill.groupBy({
+      }) : Promise.resolve([]),
+      needsSkillSourceGroups ? prisma.externalSkill.groupBy({
         by: ['sourceSlug'],
         where: scopedSkillSourceWhere,
         _count: { _all: true },
         orderBy: { _count: { sourceSlug: 'desc' } },
         take: 18,
-      }),
-      prisma.externalSkill.groupBy({
+      }) : Promise.resolve([]),
+      showSources ? prisma.externalSkill.groupBy({
         by: ['categoryZh'],
         where: scopedSkillSourceWhere,
         _count: { _all: true },
         orderBy: { _count: { categoryZh: 'desc' } },
         take: 16,
-      }),
+      }) : Promise.resolve([]),
       prisma.collectionSource.findMany({
         where: { enabled: true, ...scopedSourceWhere },
         orderBy: [{ target: 'asc' }, { priority: 'desc' }, { updatedAt: 'desc' }],
         include: { _count: { select: { candidates: true, runs: true, externalSkills: true } } },
       }),
-      prisma.collectionRun.findMany({
+      needsRunData ? prisma.collectionRun.findMany({
         orderBy: { startedAt: 'desc' },
         take: 18,
         include: { source: { select: { slug: true, name: true, target: true, type: true } } },
-      }),
-      prisma.externalSkill.findMany({
+      }) : Promise.resolve([]),
+      showSkills || showCore ? prisma.externalSkill.findMany({
         where: scopedSkillSourceWhere,
         orderBy: [{ heatScore: 'desc' }, { qualityScore: 'desc' }, { collectedAt: 'desc' }],
         take: 80,
@@ -680,8 +912,8 @@ export default async function CollectorPage({ searchParams = {} }: PageProps) {
           rawData: true,
           collectedAt: true,
         },
-      }),
-      prisma.collectionCandidate.findMany({
+      }) : Promise.resolve([]),
+      showAiNews || showCore ? prisma.collectionCandidate.findMany({
         where: { type: 'news', status: 'pending', ...scopedCandidateWhere },
         orderBy: [{ score: 'desc' }, { publishedAt: 'desc' }, { createdAt: 'desc' }],
         take: 60,
@@ -705,9 +937,9 @@ export default async function CollectorPage({ searchParams = {} }: PageProps) {
             },
           },
         },
-      }),
-      prisma.collectionCandidate.count({ where: { type: 'news', status: 'pending', ...scopedCandidateWhere } }),
-      prisma.collectionCandidate.findMany({
+      }) : Promise.resolve([]),
+      needsNewsCounts ? prisma.collectionCandidate.count({ where: { type: 'news', status: 'pending', ...scopedCandidateWhere } }) : Promise.resolve(0),
+      showPrompts || showCore ? prisma.collectionCandidate.findMany({
         where: { type: 'prompt', status: 'pending', ...scopedCandidateWhere },
         orderBy: [{ score: 'desc' }, { createdAt: 'desc' }],
         take: 60,
@@ -726,9 +958,9 @@ export default async function CollectorPage({ searchParams = {} }: PageProps) {
           createdAt: true,
           rawData: true,
         },
-      }),
-      prisma.collectionCandidate.count({ where: { type: 'prompt', status: 'pending', ...scopedCandidateWhere } }),
-      prisma.collectionCandidate.findMany({
+      }) : Promise.resolve([]),
+      needsPromptCounts ? prisma.collectionCandidate.count({ where: { type: 'prompt', status: 'pending', ...scopedCandidateWhere } }) : Promise.resolve(0),
+      showSkills ? prisma.collectionCandidate.findMany({
         where: { type: 'skill', status: 'pending', ...scopedCandidateWhere },
         orderBy: [{ score: 'desc' }, { createdAt: 'desc' }],
         take: 60,
@@ -742,8 +974,8 @@ export default async function CollectorPage({ searchParams = {} }: PageProps) {
           sourceUrl: true,
           createdAt: true,
         },
-      }),
-      prisma.collectionCluster.findMany({
+      }) : Promise.resolve([]),
+      showAiNews ? prisma.collectionCluster.findMany({
         where: {
           candidates: {
             some: {
@@ -764,18 +996,29 @@ export default async function CollectorPage({ searchParams = {} }: PageProps) {
             select: { candidates: true },
           },
         },
-      }),
-      prisma.collectionSource.findMany({
+      }) : Promise.resolve([]),
+      needsRunData ? prisma.collectionSource.findMany({
         where: { enabled: true, lastStatus: 'failed', ...scopedSourceWhere },
         orderBy: [{ updatedAt: 'desc' }],
         take: 8,
-      }),
-    ]), 2500, '数据库连接超时，请检查 PostgreSQL localhost:5432')
+      }) : Promise.resolve([]),
+      showOverview || showDeepSeek || showCapabilities ? getKnowledgeVectorStats(prisma) : Promise.resolve(knowledgeStats),
+      needsDeploymentVersions ? prisma.skillLibraryVersion.findMany({
+        orderBy: { id: 'desc' },
+        take: 12,
+      }).then(rows => rows.map(serializeDeploymentVersion)) : Promise.resolve([]),
+    ]), 9000, '数据库连接超时，请检查 PostgreSQL localhost:5432')
 
     if (!skillsShDaemonJob) {
       const daemon = await ensureCollectorJobRunning('skills-sh-daemon')
       skillsShDaemonJob = daemon.job
       skillsShDaemonStarted = daemon.started
+      if (daemon.started) collectorJobs = await listCollectorJobs(12)
+    }
+    if (!promptDaemonJob) {
+      const daemon = await ensureCollectorJobRunning('prompt-library-daemon')
+      promptDaemonJob = daemon.job
+      promptDaemonStarted = daemon.started
       if (daemon.started) collectorJobs = await listCollectorJobs(12)
     }
   } catch (error) {
@@ -794,6 +1037,7 @@ export default async function CollectorPage({ searchParams = {} }: PageProps) {
   const promptTotalCount = sourceGroups.find(item => item.target === 'prompt')?._count._all || promptSourceRows.length
   const officialNewsSource = sources.find(source => source.slug === 'ai-news-openai-rss')
   const aiShortPromptSource = sources.find(source => source.slug === 'prompt-aishort-community')
+  const aiTishiciPromptSource = sources.find(source => source.slug === 'prompt-directory-ai-tishici-readme')
   const skillsShSlow = sources.find(source => source.slug === 'skills-sh-browser-slow')
   const skillsShApi = sources.find(source => source.slug === 'skills-sh-all')
   const skillsShSearch = sources.find(source => source.slug === 'skills-sh-search-index')
@@ -808,8 +1052,17 @@ export default async function CollectorPage({ searchParams = {} }: PageProps) {
   const githubIndexConfig = parseJson<Record<string, any>>(githubGlobalIndex?.config, {})
   const githubPythonCrawlerConfig = parseJson<Record<string, any>>(githubPythonCrawlerIndex?.config, {})
   const githubCybersecurityConfig = parseJson<Record<string, any>>(githubCybersecurityIndex?.config, {})
-  const skillsShLiveStats = await fetchSkillsShLiveStats()
   let browserState = readBrowserState(browserConfig)
+  const shouldFetchSkillsShLiveStats = false
+  const cachedSkillsShLiveStats: SkillsShLiveStats = {
+    ok: false,
+    totalSkills: Number(browserState.totals?.totalSkills || browserState.liveStats?.totalSkills || 0),
+    allTimeTotal: Number(browserState.totals?.allTimeTotal || browserState.liveStats?.allTimeTotal || 0),
+    fetchedAt: browserState.liveStats?.fetchedAt || browserState.lastRunAt,
+  }
+  const skillsShLiveStats = shouldFetchSkillsShLiveStats
+    ? await fetchSkillsShLiveStats()
+    : cachedSkillsShLiveStats
   browserState = syncBrowserStateLiveStats(browserConfig, browserState, skillsShLiveStats)
   const promptCrawlerState = readPromptCrawlerState(promptCrawlerConfig)
   const skillsShSearchState = readSkillsShSearchState(skillsShSearchConfig)
@@ -820,13 +1073,37 @@ export default async function CollectorPage({ searchParams = {} }: PageProps) {
   const toolCapabilityState = readToolCapabilityState()
   const pythonCapabilityProfile = toolCapabilityState.profiles?.['github-python-crawler-skill-index']
   const cybersecurityCapabilityProfile = toolCapabilityState.profiles?.['github-cybersecurity-skill-index']
+  const capabilityTotals = capabilityUsage([pythonCapabilityProfile, cybersecurityCapabilityProfile])
+  const capabilityHistory = Array.isArray(toolCapabilityState.history) ? toolCapabilityState.history : []
+  const currentCapabilitySnapshot = capabilityHistory[capabilityHistory.length - 1]
+  const previousCapabilitySnapshot = capabilityHistory[capabilityHistory.length - 2]
+  const capabilityGrowth = {
+    totalProfiles: capabilityDelta(currentCapabilitySnapshot, previousCapabilitySnapshot, 'totalProfiles'),
+    totalSkills: capabilityDelta(currentCapabilitySnapshot, previousCapabilitySnapshot, 'totalSkills'),
+    totalActiveSkills: capabilityDelta(currentCapabilitySnapshot, previousCapabilitySnapshot, 'totalActiveSkills'),
+    totalRepos: capabilityDelta(currentCapabilitySnapshot, previousCapabilitySnapshot, 'totalRepos'),
+    totalQueries: capabilityDelta(currentCapabilitySnapshot, previousCapabilitySnapshot, 'totalQueries'),
+    totalKeywords: capabilityDelta(currentCapabilitySnapshot, previousCapabilitySnapshot, 'totalKeywords'),
+    python: {
+      skillCount: capabilityProfileDelta(currentCapabilitySnapshot, previousCapabilitySnapshot, 'github-python-crawler-skill-index', 'skillCount'),
+      activeSkillCount: capabilityProfileDelta(currentCapabilitySnapshot, previousCapabilitySnapshot, 'github-python-crawler-skill-index', 'activeSkillCount'),
+      repoCount: capabilityProfileDelta(currentCapabilitySnapshot, previousCapabilitySnapshot, 'github-python-crawler-skill-index', 'repoCount'),
+      queryCount: capabilityProfileDelta(currentCapabilitySnapshot, previousCapabilitySnapshot, 'github-python-crawler-skill-index', 'queryCount'),
+    },
+    cybersecurity: {
+      skillCount: capabilityProfileDelta(currentCapabilitySnapshot, previousCapabilitySnapshot, 'github-cybersecurity-skill-index', 'skillCount'),
+      activeSkillCount: capabilityProfileDelta(currentCapabilitySnapshot, previousCapabilitySnapshot, 'github-cybersecurity-skill-index', 'activeSkillCount'),
+      repoCount: capabilityProfileDelta(currentCapabilitySnapshot, previousCapabilitySnapshot, 'github-cybersecurity-skill-index', 'repoCount'),
+      queryCount: capabilityProfileDelta(currentCapabilitySnapshot, previousCapabilitySnapshot, 'github-cybersecurity-skill-index', 'queryCount'),
+    },
+  }
   const browserSeenCount = Array.isArray(browserState.seen) ? browserState.seen.length : Number(browserState.lastSeenCount || 0)
   const promptCrawlerModes = Array.isArray(promptCrawlerState.modes) ? promptCrawlerState.modes : []
   const browserLastRun = browserState.runs?.[browserState.runs.length - 1]
   const browserPages = statePages(browserState)
   const publicVisibleTotal = Number(skillsShLiveStats.totalSkills || browserState.totals?.totalSkills || browserState.liveStats?.totalSkills || browserLastRun?.totalSkills || 0)
   const installSignalTotal = Number(skillsShLiveStats.allTimeTotal || browserState.totals?.allTimeTotal || browserState.liveStats?.allTimeTotal || browserLastRun?.allTimeTotal || 0)
-  const targetTotal = Number(installSignalTotal || publicVisibleTotal || browserConfig.totalTarget || 80000)
+  const targetTotal = Number(publicVisibleTotal || browserConfig.totalTarget || 80000)
   const skillsShStatsSyncedAt = skillsShLiveStats.fetchedAt || browserState.liveStats?.fetchedAt || browserState.lastRunAt
   const skillsShStatsMode = skillsShLiveStats.ok ? '实时同步' : '本地缓存'
   const skillsShTotal = skillSourceGroups.find(item => item.sourceSlug === 'skills-sh-all')?._count._all || 0
@@ -836,9 +1113,32 @@ export default async function CollectorPage({ searchParams = {} }: PageProps) {
   const githubGlobalIndexTotal = skillSourceGroups.find(item => item.sourceSlug === 'github-global-skill-index')?._count._all || 0
   const githubPythonCrawlerTotal = skillSourceGroups.find(item => item.sourceSlug === 'github-python-crawler-skill-index')?._count._all || 0
   const githubCybersecurityTotal = skillSourceGroups.find(item => item.sourceSlug === 'github-cybersecurity-skill-index')?._count._all || 0
+  const capabilitySourceGrowth = {
+    python: {
+      total: capabilityProfileDelta(currentCapabilitySnapshot, previousCapabilitySnapshot, 'github-python-crawler-skill-index', 'skillCount'),
+      active: capabilityProfileDelta(currentCapabilitySnapshot, previousCapabilitySnapshot, 'github-python-crawler-skill-index', 'activeSkillCount'),
+    },
+    cybersecurity: {
+      total: capabilityProfileDelta(currentCapabilitySnapshot, previousCapabilitySnapshot, 'github-cybersecurity-skill-index', 'skillCount'),
+      active: capabilityProfileDelta(currentCapabilitySnapshot, previousCapabilitySnapshot, 'github-cybersecurity-skill-index', 'activeSkillCount'),
+    },
+  }
+  const githubTraceCoverage = externalSkillCount ? percent(githubTraceSkillCount, externalSkillCount) : '0%'
+  const categoryCoverage = externalSkillCount ? percent(categoryCoveredSkillCount, externalSkillCount) : '0%'
+  const classifierCoverage = externalSkillCount ? percent(classifierExplainedSkillCount, externalSkillCount) : '0%'
+  const publishedCoverage = externalSkillCount ? percent(linkedExternalSkillCount, externalSkillCount) : '0%'
+  loadLocalDeepSeekConfig()
+  const deepSeekConfigStatus = getDeepSeekConfigStatus()
+  const deepSeekGrowthPlan = readDeepSeekGrowthPlan()
   const skillsShDaemonStatus = skillsShDaemonJob?.status === 'running' ? 'running' : databaseOffline ? 'offline' : 'starting'
   const skillsShDaemonNote = skillsShDaemonJob
     ? `${skillsShDaemonStarted ? '刚自动启动' : '常驻运行'} · pid ${skillsShDaemonJob.pid || '-'}`
+    : databaseOffline
+      ? '数据库离线，暂不启动'
+      : '等待自动启动'
+  const promptDaemonStatus = promptDaemonJob?.status === 'running' ? 'running' : databaseOffline ? 'offline' : 'starting'
+  const promptDaemonNote = promptDaemonJob
+    ? `${promptDaemonStarted ? '刚自动启动' : '常驻运行'} · pid ${promptDaemonJob.pid || '-'}`
     : databaseOffline
       ? '数据库离线，暂不启动'
       : '等待自动启动'
@@ -885,10 +1185,31 @@ export default async function CollectorPage({ searchParams = {} }: PageProps) {
       scrollSteps: Number(browserConfig.scrollSteps || 10),
       delayMs: Number(browserConfig.delayMs || 1000),
       maxClicks: Number(browserConfig.maxClicks || 20),
+      maxPagesPerRun: Number(browserConfig.maxPagesPerRun || 0),
+      rotatePages: browserConfig.rotatePages !== false,
+      includeSeen: Boolean(browserConfig.includeSeen),
+    },
+    browserRotation: {
+      nextUrlIndex: Number(browserState.nextUrlIndex || 0),
+      nextUrlIndexUpdatedAt: browserState.nextUrlIndexUpdatedAt || null,
+      discoveredPageCount: Array.isArray(browserState.discoveredPages) ? browserState.discoveredPages.length : 0,
+      lastRunAt: browserState.lastRunAt || null,
+      lastRun: browserState.runs?.length ? {
+        url: browserState.runs[browserState.runs.length - 1]?.url || null,
+        totalParsed: Number(browserState.runs[browserState.runs.length - 1]?.totalParsed || 0),
+        emittedCount: Number(browserState.runs[browserState.runs.length - 1]?.emittedCount || 0),
+        freshCount: Number(browserState.runs[browserState.runs.length - 1]?.freshCount || 0),
+        replayCount: Number(browserState.runs[browserState.runs.length - 1]?.replayCount || 0),
+        seenCount: Number(browserState.runs[browserState.runs.length - 1]?.seenCount || 0),
+        startedAt: browserState.runs[browserState.runs.length - 1]?.startedAt || null,
+        finishedAt: browserState.runs[browserState.runs.length - 1]?.finishedAt || null,
+      } : null,
     },
     browserPages: browserPages.slice(0, 12).map(page => ({
       url: page.url,
       freshCount: Number(page.freshCount || 0),
+      emittedCount: Number(page.emittedCount || 0),
+      replayCount: Number(page.replayCount || 0),
       totalParsed: Number(page.totalParsed || 0),
       seenCount: Number(page.seenCount || 0),
       lastRunAt: page.lastRunAt,
@@ -896,6 +1217,7 @@ export default async function CollectorPage({ searchParams = {} }: PageProps) {
   }
   const overviewLiveInitialData = {
     ...skillsShLiveInitialData,
+    externalSkillTotal: externalSkillCount,
     githubPythonCrawlerTotal,
     githubCybersecurityTotal,
     githubPythonCrawlerState: {
@@ -923,6 +1245,14 @@ export default async function CollectorPage({ searchParams = {} }: PageProps) {
       currentSourceEvent: '',
       latestFinishedSources: [],
       latestSync: null,
+    },
+    recentActivity: {
+      externalCreated5m: 0,
+      externalUpdated5m: 0,
+      externalCreated30m: 0,
+      externalUpdated30m: 0,
+      skillResourceUpdated5m: 0,
+      skillResourceUpdated30m: 0,
     },
   }
   const toIso = (value: Date | string | null | undefined) => value instanceof Date ? value.toISOString() : value || null
@@ -958,9 +1288,67 @@ export default async function CollectorPage({ searchParams = {} }: PageProps) {
       sourceSlug: item.sourceSlug,
       _count: { _all: Number(item._count?._all || 0) },
     })),
-    categoryGroups: categoryGroups.map(item => ({
-      categoryZh: item.categoryZh || null,
-      _count: { _all: Number(item._count?._all || 0) },
+      categoryGroups: categoryGroups.map(item => ({
+        categoryZh: item.categoryZh || null,
+        _count: { _all: Number(item._count?._all || 0) },
+      })),
+  }
+  const coreTablesInitialData: CollectorCoreTablesData = {
+    counts: {
+      skills: Number(externalSkillCount || externalSkills.length || 0),
+      prompts: Number(promptLibraryPendingCount || promptCandidates.length || 0),
+      news: Number(aiNewsPendingCount || newsCandidates.length || 0),
+    },
+    skills: externalSkills.map(skill => ({
+      id: Number(skill.id),
+      sourceSlug: String(skill.sourceSlug || ''),
+      name: String(skill.name || ''),
+      description: skill.description || null,
+      categoryZh: skill.categoryZh || null,
+      tagsZh: skill.tagsZh || null,
+      qualityScore: Number(skill.qualityScore || 0),
+      heatScore: Number(skill.heatScore || 0),
+      stars: Number(skill.stars || 0),
+      forks: Number(skill.forks || 0),
+      downloads: Number(skill.downloads || 0),
+      sourceUrl: skill.sourceUrl || null,
+      githubUrl: skill.githubUrl || null,
+      homepageUrl: skill.homepageUrl || null,
+      downloadUrl: skill.downloadUrl || null,
+      status: skill.status || null,
+      rawData: skill.rawData || null,
+      collectedAt: toIso(skill.collectedAt),
+    })),
+    prompts: promptCandidates.map(candidate => ({
+      id: Number(candidate.id),
+      title: String(candidate.title || ''),
+      sourceName: candidate.sourceName || null,
+      author: candidate.author || null,
+      category: candidate.category || null,
+      score: Number(candidate.score || 0),
+      summaryZh: candidate.summaryZh || null,
+      highlights: candidate.highlights || null,
+      tags: candidate.tags || null,
+      sourceUrl: candidate.sourceUrl || null,
+      createdAt: toIso(candidate.createdAt),
+      rawData: candidate.rawData || null,
+    })),
+    news: newsCandidates.map(candidate => ({
+      id: Number(candidate.id),
+      title: String(candidate.title || ''),
+      sourceName: candidate.sourceName || null,
+      category: candidate.category || null,
+      score: Number(candidate.score || 0),
+      summaryZh: candidate.summaryZh || null,
+      highlights: candidate.highlights || null,
+      tags: candidate.tags || null,
+      sourceUrl: candidate.sourceUrl || null,
+      publishedAt: toIso(candidate.publishedAt),
+      createdAt: toIso(candidate.createdAt),
+      cluster: candidate.cluster ? {
+        title: candidate.cluster.title || null,
+        heatScore: Number(candidate.cluster.heatScore || 0),
+      } : null,
     })),
   }
 
@@ -976,28 +1364,7 @@ export default async function CollectorPage({ searchParams = {} }: PageProps) {
             <div className="text-xs text-zinc-500">数据采集后台</div>
           </div>
         </div>
-        <nav className="mt-8 space-y-1">
-          {switchPages.map(item => {
-            const active = item.page === activePage
-            return (
-              <Link
-                key={item.page}
-                href={switchHref(item.page)}
-                className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors ${active ? 'border border-cyan-400/40 bg-cyan-400/10 text-cyan-100' : 'text-zinc-300 hover:bg-zinc-900 hover:text-white'}`}
-              >
-                <item.icon className={`h-4 w-4 ${active ? 'text-cyan-200' : 'text-zinc-500'}`} />
-                {item.label}
-              </Link>
-            )
-          })}
-          <div className="my-3 border-t border-zinc-800" />
-          {quickLinks.map(item => (
-            <Link key={item.href} href={item.href} className="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-900 hover:text-white">
-              <item.icon className="h-4 w-4 text-zinc-500" />
-              {item.label}
-            </Link>
-          ))}
-        </nav>
+        <CollectorSwitchNav scope="collector" layout="sidebar" basePath="/collector" />
         <div className="absolute bottom-5 left-4 right-4 rounded-md border border-zinc-800 bg-zinc-950/60 p-3 text-xs leading-5 text-zinc-400">
           <div className="mb-2 flex items-center gap-2 text-cyan-200">
             <Clock3 className="h-3.5 w-3.5" />
@@ -1026,11 +1393,12 @@ export default async function CollectorPage({ searchParams = {} }: PageProps) {
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <CollectorPageAutoRefresh />
+                <CollectorPageAutoRefresh enabled={false} />
                 <CollectorRunButton label="启动全量采集" compact />
+                <CollectorCommandRunButton commandId="prompt-library-daemon" label="确保提示词常驻" compact />
                 <Link className="inline-flex h-9 items-center gap-2 rounded-md border border-cyan-500/50 bg-cyan-400/10 px-3 text-sm font-medium text-cyan-100 hover:border-cyan-300" href="/collector/settings">
                   <Github className="h-4 w-4" />
-                  GitHub 配置
+                  采集配置
                 </Link>
                 <Link className="inline-flex h-9 items-center rounded-md border border-zinc-700 px-3 text-sm text-zinc-200 hover:border-cyan-400" href="/api/collector/stats">
                   JSON 状态
@@ -1045,21 +1413,7 @@ export default async function CollectorPage({ searchParams = {} }: PageProps) {
 
         <div className="space-y-6 px-5 py-6 lg:px-8">
           <div className="sticky top-0 z-20 -mx-5 border-b border-zinc-800 bg-[#0b0f14]/95 px-5 py-3 backdrop-blur lg:-mx-8 lg:px-8">
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {switchPages.map(item => {
-                const active = item.page === activePage
-                return (
-                  <Link
-                    key={item.page}
-                    href={switchHref(item.page)}
-                    className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-md border px-3 text-sm ${active ? 'border-cyan-400/50 bg-cyan-400/10 text-cyan-100' : 'border-zinc-800 bg-zinc-950/70 text-zinc-400 hover:border-zinc-600 hover:text-zinc-100'}`}
-                  >
-                    <item.icon className="h-4 w-4" />
-                    {item.label}
-                  </Link>
-                )
-              })}
-            </div>
+            <CollectorSwitchNav scope="collector" layout="tabs" basePath="/collector" />
           </div>
 
           {databaseOffline && (
@@ -1088,17 +1442,42 @@ export default async function CollectorPage({ searchParams = {} }: PageProps) {
                 <StatCard icon={Database} label="外部 Skill 原始库" value={externalSkillCount} note="external_skills" tone="emerald" />
                 <StatCard icon={ShieldCheck} label="已发布 Skill" value={publishedSkillCount} note="skill_resources" tone="violet" />
                 <StatCard icon={Gauge} label="待审核候选" value={pendingCount} note="collection_candidates" tone="amber" />
-                <StatCard icon={RefreshCw} label="skills.sh All Time" value={installSignalTotal} note={`${skillsShStatsMode} ${formatDate(skillsShStatsSyncedAt)}`} tone="blue" />
+                <StatCard icon={RefreshCw} label="skills.sh 公开 Skill" value={publicVisibleTotal} note={`唯一 Skill 数 · ${skillsShStatsMode} ${formatDate(skillsShStatsSyncedAt)}`} tone="blue" />
                 <StatCard icon={AlertTriangle} label="失败源" value={failedSources.length} note="需要处理" tone="red" />
+              </section>
+
+              <section className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
+                <Panel title="数据质量口径" icon={ShieldCheck} description="这里看的是入库质量，不是单纯总数。总数不增长时，先看新增/更新和重复命中。">
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <QualityMeter label="GitHub 源追踪" value={githubTraceSkillCount} total={externalSkillCount} percentLabel={githubTraceCoverage} note="能定位到原始仓库或源文件" />
+                    <QualityMeter label="中文分类覆盖" value={categoryCoveredSkillCount} total={externalSkillCount} percentLabel={categoryCoverage} note="已写入 categoryZh" />
+                    <QualityMeter label="分类解释覆盖" value={classifierExplainedSkillCount} total={externalSkillCount} percentLabel={classifierCoverage} note="rawData.skillClassifier" />
+                    <QualityMeter label="发布同步覆盖" value={linkedExternalSkillCount} total={externalSkillCount} percentLabel={publishedCoverage} note="已聚合到 skill_resources" />
+                  </div>
+                </Panel>
+
+                <Panel title="增长判断" icon={Gauge} description="采集器命中已有 fingerprint 时会更新记录，不会让总数增加。">
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <MiniStatus label="skills.sh 公开唯一 Skill" value={formatNumber(publicVisibleTotal)} />
+                    <MiniStatus label="All Time 累计安装" value={formatNumber(installSignalTotal)} />
+                    <MiniStatus label="外部 Skill 当前入库" value={formatNumber(externalSkillCount)} />
+                  </div>
+                  <div className="mt-3 rounded-md border border-zinc-800 bg-[#0b0f14] p-3 text-xs leading-5 text-zinc-500">
+                    页面每 5 秒刷新，常驻任务会先扩大搜索和源仓库池；如果命中的是已存在 GitHub 源文件，数据会表现为更新时间变化、Star/Fork/分类解释补齐，而不是总数立刻上涨。
+                  </div>
+                </Panel>
               </section>
 
               <section className="grid gap-4 xl:grid-cols-3">
                 <OverviewShortcut icon={Terminal} title="本地采集控制台" href={switchHref('command')} metric={`${collectorCommandSpecs.length} 个指令`} note="启动采集后自动进入任务详情页。" />
-                <OverviewShortcut icon={RefreshCw} title="skills.sh 常驻采集" href={switchHref('skills-sh')} metric={skillsShDaemonStatus} note={`${skillsShDaemonNote}；All Time ${formatNumber(installSignalTotal)}。`} />
+                <OverviewShortcut icon={Table2} title="三张核心表" href={switchHref('core')} metric={`${formatNumber(externalSkillCount)}/${formatNumber(promptLibraryPendingCount)}/${formatNumber(aiNewsPendingCount)}`} note="Skill、提示词、AI 资讯分表查看和排序。" />
+                <OverviewShortcut icon={RefreshCw} title="skills.sh 常驻采集" href={switchHref('skills-sh')} metric={skillsShDaemonStatus} note={`${skillsShDaemonNote}；公开唯一 Skill ${formatNumber(publicVisibleTotal)}，All Time 累计安装 ${formatNumber(installSignalTotal)}。`} />
                 <OverviewShortcut icon={Newspaper} title="AI 资讯候选" href={switchHref('ai-news')} metric={`${formatNumber(aiNewsPendingCount)} 待审核`} note="RSS 源、热点聚类和资讯候选。" />
-                <OverviewShortcut icon={FileText} title="行业提示词库" href={switchHref('prompts')} metric={`${formatNumber(promptLibraryPendingCount)} 待审核`} note="AiShort 分页、正文解析和提示词候选。" />
-                <OverviewShortcut icon={Database} title="Skill 原始库" href={switchHref('skills')} metric={`${formatNumber(externalSkillCount)} 条`} note="GitHub 源仓库、Star、下载量与审核候选。" />
+                <OverviewShortcut icon={FileText} title="行业提示词库" href={switchHref('prompts')} metric={`${formatNumber(promptLibraryPendingCount)} 待审核`} note={`${promptDaemonNote}；AiShort 分页、正文解析和提示词候选。`} />
+                <OverviewShortcut icon={Database} title="Skill 原始库" href={switchHref('skills')} metric={`${formatNumber(externalSkillCount)} 条`} note="GitHub 源仓库、Star、skills.sh 累计安装与审核候选。" />
                 <OverviewShortcut icon={Fingerprint} title="工具能力画像" href={switchHref('capabilities')} metric={`Crawler ${formatNumber(githubPythonCrawlerTotal)} / Shannon ${formatNumber(githubCybersecurityTotal)}`} note="用专项 Skill 反哺下一轮采集关键词。" />
+                <OverviewShortcut icon={BrainCircuit} title="DeepSeek 增强" href={switchHref('deepseek')} metric={deepSeekConfigStatus.configured ? `${formatNumber(knowledgeStats.total)} 知识条目` : '待配置'} note="理解知识库和能力画像，生成采集增长计划。" />
+                <OverviewShortcut icon={PackageCheck} title="部署包版本" href={switchHref('deploy')} metric={deploymentVersions[0]?.version || '0.0.1'} note={deploymentVersions[0] ? `${deploymentVersions[0].statusLabel || deploymentVersions[0].status}，上传后自动部署。` : '上传第一个部署包后生成版本历史。'} />
                 <OverviewShortcut icon={Globe2} title="数据源网站" href={switchHref('sources')} metric={`${formatNumber(activeScopedSources.length)} 个主源`} note="查看来源启停、频率、候选和分类覆盖。" />
                 <OverviewShortcut icon={SlidersHorizontal} title="采集工具" href={switchHref('tools')} metric="后端工具入口" note="按工具直接触发 GitHub、skills.sh、资讯和提示词采集。" />
                 <OverviewShortcut icon={Activity} title="任务监控" href={switchHref('runs')} metric={`${formatNumber(latestRuns.length)} 条最近运行`} note="查看最近任务、失败源和维护命令。" />
@@ -1124,43 +1503,181 @@ export default async function CollectorPage({ searchParams = {} }: PageProps) {
           </Panel>
           )}
 
+          {activePage === 'core' && (
+            <CollectorCoreTables initialData={coreTablesInitialData} />
+          )}
+
           {activePage === 'capabilities' && (
-          <Panel id="capabilities" title="工具能力增强画像" icon={Fingerprint} description="把已采集的 Scrapling 风格爬虫 Skill 和 Shannon 黑客技能库 Skill 反哺成关键词、GitHub 查询、热门仓库和安全策略，增强下一轮采集能力。">
-            <div className="grid gap-4 xl:grid-cols-[1fr_1fr_0.8fr]">
-              <CapabilityProfileCard
-                title="Scrapling 风格爬虫能力池"
-                profile={pythonCapabilityProfile}
-                fallbackSkillCount={githubPythonCrawlerTotal}
-              />
-              <CapabilityProfileCard
-                title="Shannon 黑客技能库能力池"
-                profile={cybersecurityCapabilityProfile}
-                fallbackSkillCount={githubCybersecurityTotal}
-              />
-              <div className="rounded-md border border-zinc-800 bg-zinc-950/50 p-4">
-                <div className="flex items-center gap-2 text-sm font-medium text-zinc-100">
-                  <ShieldCheck className="h-4 w-4 text-cyan-300" />
-                  安全策略
+            <div className="space-y-4">
+              <Panel id="capability-control" title="能力池驱动采集" icon={Fingerprint} description="能力画像里的 Skill 是采集器可调用的检索、分类和审核信号；它会写入 tool-capabilities.json，并被 GitHub 专项采集自动合并到 query 池。">
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                  <ConceptTile icon={Fingerprint} title="画像数" value={formatNumber(capabilityTotals.totalProfiles)} note="当前可被读取的能力画像。" />
+                  <ConceptTile icon={Database} title="能力 Skill" value={formatNumber(capabilityTotals.totalSkills || githubPythonCrawlerTotal + githubCybersecurityTotal)} note="原始专项 Skill 样本。" />
+                  <ConceptTile icon={Github} title="源仓库" value={formatNumber(capabilityTotals.totalRepos)} note="去除聚合库和占位库后的源仓库。" />
+                  <ConceptTile icon={Search} title="Code Query" value={formatNumber(capabilityTotals.totalCodeQueries)} note="GitHub Code Search 输入。" />
+                  <ConceptTile icon={Globe2} title="Repo Query" value={formatNumber(capabilityTotals.totalRepoQueries)} note="GitHub 仓库搜索输入。" />
+                  <ConceptTile icon={ShieldCheck} title="分类解释" value={classifierCoverage} note="写回 rawData.skillClassifier。" />
                 </div>
-                <div className="mt-3 grid gap-2">
-                  <MiniStatus label="画像生成时间" value={formatDate(toolCapabilityState.generatedAt)} />
-                  <MiniStatus label="执行模式" value={toolCapabilityState.safetyPolicy?.mode || 'metadata-only'} />
-                  <MiniStatus label="画像文件" value=".collector-state/tool-capabilities.json" />
+
+                <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_0.9fr]">
+                  <div className="grid gap-4 2xl:grid-cols-2">
+                    <CapabilityProfileCard
+                      title="Scrapling / Python 爬虫能力池"
+                      profile={pythonCapabilityProfile}
+                      fallbackSkillCount={githubPythonCrawlerTotal}
+                    />
+                    <CapabilityProfileCard
+                      title="Shannon 安全研究能力池"
+                      profile={cybersecurityCapabilityProfile}
+                      fallbackSkillCount={githubCybersecurityTotal}
+                    />
+                  </div>
+
+                  <div className="space-y-4">
+                    <CapabilityActionPanel
+                      generatedAt={toolCapabilityState.generatedAt}
+                      mode={toolCapabilityState.safetyPolicy?.mode || 'metadata-only'}
+                      notes={toolCapabilityState.safetyPolicy?.notes || []}
+                    />
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <CommandActionCard
+                        icon={Fingerprint}
+                        title="重建能力画像"
+                        commandId="build-tool-capability-profiles"
+                        command="npm run collector:build-capabilities"
+                        note="生成 codeQueries / repoQueries / topicKeywords。"
+                      />
+                      <CommandActionCard
+                        icon={ListChecks}
+                        title="重算 Skill 分类"
+                        commandId="reclassify-skills"
+                        command="npm run collector:admin -- reclassify-external-skills --limit 50000"
+                        note="把分类、标签、命中词写回 external_skills。"
+                      />
+                      <CommandActionCard
+                        icon={RefreshCw}
+                        title="启动爬虫能力采集"
+                        commandId="github-python-crawler-skills"
+                        command="npm run collector:source -- github-python-crawler-skill-index"
+                        note={`query ${formatNumber(Number(githubPythonCrawlerState.nextQueryIndex || 0))}/${formatNumber(Number(githubPythonCrawlerState.queryCount || 0))} · 上轮 ${formatNumber(Number(githubPythonCrawlerState.collectedCount || 0))}`}
+                      />
+                      <CommandActionCard
+                        icon={ShieldCheck}
+                        title="启动安全能力采集"
+                        commandId="github-cybersecurity-skills"
+                        command="npm run collector:source -- github-cybersecurity-skill-index"
+                        note={`query ${formatNumber(Number(githubCybersecurityState.nextQueryIndex || 0))}/${formatNumber(Number(githubCybersecurityState.queryCount || 0))} · 上轮 ${formatNumber(Number(githubCybersecurityState.collectedCount || 0))}`}
+                      />
+                      <CommandActionCard
+                        icon={BrainCircuit}
+                        title="DeepSeek 调度增长"
+                        commandId="deepseek-growth-plan"
+                        command="npm run collector:deepseek-plan"
+                        note="读取能力画像，生成 Skill、资讯、提示词增长计划。"
+                      />
+                    </div>
+                  </div>
                 </div>
-                <div className="mt-3 space-y-2 text-xs leading-5 text-zinc-500">
-                  {(toolCapabilityState.safetyPolicy?.notes || [
-                    '先运行生成工具能力画像，再启动专项采集。',
-                    'Shannon 黑客 Skill 只做元数据、分类和来源追踪。',
-                  ]).slice(0, 4).map(note => (
-                    <p key={note}>{note}</p>
-                  ))}
+              </Panel>
+
+              <Panel id="capability-inputs" title="采集器实际输入" icon={Terminal} description="这里展示能力画像将要喂给采集器的关键词和 GitHub 查询，便于判断下一轮会去哪里找原始 Skill。">
+                <div className="grid gap-4 xl:grid-cols-2">
+                  <CapabilityQueryMatrix title="Scrapling / Python 爬虫" profile={pythonCapabilityProfile} />
+                  <CapabilityQueryMatrix title="Shannon 安全研究" profile={cybersecurityCapabilityProfile} />
                 </div>
-                <div className="mt-3">
-                  <CommandBlock title="生成能力画像" command="npm run collector:build-capabilities" />
-                </div>
-              </div>
+              </Panel>
             </div>
-          </Panel>
+          )}
+
+          {activePage === 'deepseek' && (
+            <div className="space-y-4">
+              <Panel id="deepseek-control" title="DeepSeek 知识库与增长调度" icon={BrainCircuit} description="DeepSeek 读取本地知识库、能力画像和采集状态，生成 Skill、AI 资讯、提示词三类数据的增长计划。">
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                  <ConceptTile icon={BrainCircuit} title="DeepSeek" value={deepSeekConfigStatus.configured ? '已配置' : '未配置'} note={`${deepSeekConfigStatus.model || '-'} · ${deepSeekConfigStatus.maskedToken || '无 token'}`} />
+                  <ConceptTile icon={Database} title="知识库条目" value={formatNumber(knowledgeStats.total)} note={`最近更新 ${formatDate(knowledgeStats.updatedAt)}`} />
+                  <ConceptTile icon={Fingerprint} title="能力画像" value={formatNumber(capabilityTotals.totalProfiles)} note={`查询词 ${formatNumber(capabilityTotals.totalCodeQueries + capabilityTotals.totalRepoQueries)}`} />
+                  <ConceptTile icon={Github} title="Skill 原始库" value={formatNumber(externalSkillCount)} note="DeepSeek 重点补齐原始 GitHub 来源。" />
+                  <ConceptTile icon={Newspaper} title="AI 资讯候选" value={formatNumber(aiNewsPendingCount)} note="模型动态、产品发布、研究进展。" />
+                  <ConceptTile icon={FileText} title="提示词候选" value={formatNumber(promptLibraryPendingCount)} note="行业提示词与模板候选。" />
+                </div>
+
+                <div className="mt-4 grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+                  <div className="space-y-3">
+                    <div className="rounded-md border border-zinc-800 bg-[#0b0f14] p-3">
+                      <div className="mb-2 text-sm font-medium text-zinc-100">自动增强流程</div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <AutoProcessCard
+                          icon={Database}
+                          title="构建知识库"
+                          status={knowledgeStats.total > 0 ? '已构建' : '等待自动任务'}
+                          command="npm run collector:build-knowledge -- --limit 50000"
+                          note="从 Skill、提示词、AI 资讯和能力画像抽取可检索知识。"
+                        />
+                        <AutoProcessCard
+                          icon={BrainCircuit}
+                          title="生成增长计划"
+                          status={deepSeekConfigStatus.configured ? '自动生成' : '等待 API Key'}
+                          command="npm run collector:deepseek-plan"
+                          note="调用 DeepSeek 生成下一轮采集 query 和推荐命令。"
+                        />
+                        <AutoProcessCard
+                          icon={Sparkles}
+                          title="一键增强采集"
+                          status={deepSeekGrowthPlan ? '计划已生成' : '等待计划'}
+                          command="npm run collector:admin -- deepseek-growth-dispatch"
+                          note="构建知识库、生成计划，并执行有边界的一轮增强采集。"
+                        />
+                        <AutoProcessCard
+                          icon={RefreshCw}
+                          title="确保 Skill 常驻"
+                          status={skillsShDaemonStatus === 'running' ? '常驻运行' : skillsShDaemonStatus}
+                          command="npm run collector:skills-sh-daemon"
+                          note="GitHub + skills.sh 持续同步，读取 DeepSeek 新增查询词。"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="rounded-md border border-zinc-800 bg-zinc-950/50 p-3">
+                      <div className="mb-3 text-sm font-medium text-zinc-100">知识库分布</div>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {knowledgeStats.byScope.map(item => (
+                          <MiniStatus key={item.scope} label={item.scope} value={formatNumber(item.count)} />
+                        ))}
+                        {knowledgeStats.byScope.length === 0 && <div className="text-sm text-zinc-500">还没有知识库条目，先运行“构建知识库”。</div>}
+                      </div>
+                    </div>
+                  </div>
+
+                  <DeepSeekPlanPanel plan={deepSeekGrowthPlan} />
+                </div>
+              </Panel>
+
+              <Panel id="deepseek-data-flow" title="DeepSeek 如何驱动增长" icon={GitBranch} description="增长计划不是纯报告，生成后的查询词会被 skills.sh、GitHub Skill 索引和提示词采集器读取。">
+                <div className="grid gap-3 xl:grid-cols-3">
+                  <ProcessBlock
+                    title="1. 建知识库"
+                    command="knowledge_vectors"
+                    note="外部 Skill、提示词候选、AI 资讯候选、能力画像被压缩成可检索文本。"
+                  />
+                  <ProcessBlock
+                    title="2. 生成计划"
+                    command=".collector-state/deepseek-growth-plan.json"
+                    note="DeepSeek 输出 skillsShQueries、githubCodeQueries、githubRepoQueries 和 prompts.queries。"
+                  />
+                  <ProcessBlock
+                    title="3. 采集器读取"
+                    command="collect-resources.ts"
+                    note="常驻任务下一轮自动合并这些 query，继续扩充 Skill、AI 资讯和提示词。"
+                  />
+                </div>
+              </Panel>
+            </div>
+          )}
+
+          {activePage === 'deploy' && (
+            <Panel id="deployment-packages" title="部署包与版本迭代" icon={PackageCheck} description="上传新版后台部署包后自动生成 0.0.x 版本，启动部署任务，并在这里保留每次 Skill 知识库版本迭代历史。">
+              <DeploymentPackagePanel initialVersions={deploymentVersions} />
+            </Panel>
           )}
 
           {activePage === 'skills-sh' && (
@@ -1312,13 +1829,22 @@ export default async function CollectorPage({ searchParams = {} }: PageProps) {
           )}
 
           {activePage === 'prompts' && (
-          <Panel id="prompts" title="各行各业提示词库采集" icon={FileText} description="采集 AiShort 社区提示词，按行业、角色、场景沉淀可复用 Prompt 候选。">
+          <Panel id="prompts" title="提示词源与行业 Prompt 采集" icon={FileText} description="采集 AiShort、ai-tishici README 目录和外部提示词网站，保留原始发布链接并按行业、场景、工具类型沉淀候选。">
             <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
               <div className="space-y-4">
                 <div className="grid gap-3 md:grid-cols-3">
                   <MiniStatus label="提示词采集源" value={`${formatNumber(promptSourceRows.length)} 个`} />
                   <MiniStatus label="待审核提示词" value={formatNumber(promptLibraryPendingCount)} />
-                  <MiniStatus label="源类型" value={`${formatNumber(Number(promptTotalCount))} 个`} />
+                  <MiniStatus label="常驻同步" value={promptDaemonStatus} />
+                </div>
+                <div className="rounded-md border border-cyan-400/20 bg-cyan-400/5 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-medium text-cyan-100">提示词常驻采集</div>
+                      <div className="mt-1 text-xs text-zinc-400">{promptDaemonNote}，轮巡 {formatNumber(Number(promptTotalCount))} 个启用提示词源。</div>
+                    </div>
+                    <CollectorCommandRunButton commandId="prompt-library-daemon" label="确保常驻" compact />
+                  </div>
                 </div>
                 <div className="grid gap-3 md:grid-cols-3">
                   <MiniStatus label="AiShort 接口总量" value={formatNumber(Number(promptCrawlerState.totalAvailable || 0))} />
@@ -1331,20 +1857,38 @@ export default async function CollectorPage({ searchParams = {} }: PageProps) {
                 <div className="rounded-md border border-zinc-800 bg-[#0b0f14] p-3">
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <div className="text-sm font-medium text-zinc-100">AiShort 社区提示词</div>
-                      <div className="mt-1 text-xs text-zinc-500">优先使用接口分页发现 ID，再用 bulk 批量拉详情；接口失败时退回公开页首屏采集。状态文件：{promptCrawlerConfig.stateFile || '.collector-state/aishort-prompts.json'}</div>
+	                      <div className="text-sm font-medium text-zinc-100">多来源提示词采集</div>
+	                      <div className="mt-1 text-xs text-zinc-500">总采集会依次执行 AiShort 接口、ai-tishici README 源目录，以及 PromptBase / FlowGPT / PromptingGuide / OpenArt 等外部提示词网站。AiShort 状态文件：{promptCrawlerConfig.stateFile || '.collector-state/aishort-prompts.json'}</div>
                       {promptCrawlerState.lastError ? (
                         <div className="mt-2 text-xs text-red-300">上次接口错误：{trim(String(promptCrawlerState.lastError), 160)}</div>
                       ) : null}
                     </div>
-                    <CollectorRunButton sourceSlug="prompt-aishort-community" label="采集提示词" compact />
-                  </div>
-                  <div className="grid gap-2 md:grid-cols-3">
-                    <CommandBlock title="采集全部提示词源" command="npm run collector:prompts" />
-                    <CommandBlock title="多轮续爬提示词" command="npm run collector:batch-prompts -- --rounds 8" />
-                    <CommandBlock title="查看提示词候选" command="npm run collector:candidates -- --type prompt --status pending --limit 50" />
-                  </div>
-                </div>
+	                    <div className="flex flex-wrap items-center gap-2">
+	                      <CollectorCommandRunButton commandId="prompt-library-daemon" label="常驻同步" compact />
+	                      <CollectorCommandRunButton commandId="prompt-library" label="采集全部来源" compact />
+	                      <CollectorCommandRunButton commandId="prompt-ai-tishici-directory" label="采集目录" compact />
+	                      <CollectorRunButton sourceSlug="prompt-aishort-community" label="只采 AiShort" compact />
+	                    </div>
+	                  </div>
+	                  <div className="grid gap-2 md:grid-cols-4">
+	                    <CommandBlock title="采集全部提示词源" command="npm run collector:prompts" />
+	                    <CommandBlock title="常驻采集提示词源" command="npm run collector:prompt-daemon" />
+	                    <CommandBlock title="采集 ai-tishici 目录" command="npm run collector:source -- prompt-directory-ai-tishici-readme" />
+	                    <CommandBlock title="多轮续爬提示词" command="npm run collector:batch-prompts -- --rounds 8" />
+	                    <CommandBlock title="查看提示词候选" command="npm run collector:candidates -- --type prompt --status pending --limit 50" />
+	                  </div>
+	                </div>
+	                {aiTishiciPromptSource ? (
+	                  <div className="rounded-md border border-zinc-800 bg-zinc-950/50 p-3">
+	                    <div className="flex flex-wrap items-center justify-between gap-3">
+	                      <div>
+	                        <div className="text-sm font-medium text-zinc-100">ai-tishici README 源目录</div>
+	                        <div className="mt-1 text-xs text-zinc-500">从 holmquistc407/ai-tishici README 拆出外部提示词网站：中文提示词库、提示词市场、绘图提示词工具和提示工程教程。</div>
+	                      </div>
+	                      <CollectorCommandRunButton commandId="prompt-ai-tishici-directory" label="采集目录" compact />
+	                    </div>
+	                  </div>
+	                ) : null}
                 {promptCrawlerModes.length > 0 && (
                   <div className="max-h-[460px] overflow-auto rounded-md border border-zinc-800">
                     <table className="w-full min-w-[720px] text-left text-sm">
@@ -1377,30 +1921,38 @@ export default async function CollectorPage({ searchParams = {} }: PageProps) {
                       <tr className="border-b border-zinc-800">
                         <th className="px-3 py-3">提示词源</th>
                         <th className="px-3 py-3">状态</th>
-                        <th className="px-3 py-3">候选</th>
+	                        <th className="px-3 py-3">分类/解析器</th>
+	                        <th className="px-3 py-3">候选</th>
                         <th className="px-3 py-3">频率</th>
                         <th className="px-3 py-3">入口</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {promptSourceRows.map(source => (
-                        <tr key={source.id} className="border-b border-zinc-900 align-top">
-                          <td className="px-3 py-3">
-                            <div className="font-medium text-zinc-100">{source.name}</div>
-                            <div className="text-xs text-zinc-500">{source.slug}</div>
-                          </td>
-                          <td className="px-3 py-3"><StatusBadge status={source.enabled ? source.lastStatus : 'disabled'} /></td>
-                          <td className="px-3 py-3 text-cyan-200">{formatNumber(source._count.candidates)}</td>
-                          <td className="px-3 py-3 text-zinc-400">{source.frequencyMins} 分钟</td>
-                          <td className="px-3 py-3">
+	                      {promptSourceRows.map(source => {
+	                        const rawConfig = parseJson<Record<string, any>>(source.config, {})
+	                        return (
+	                        <tr key={source.id} className="border-b border-zinc-900 align-top">
+	                          <td className="px-3 py-3">
+	                            <div className="font-medium text-zinc-100">{source.name}</div>
+	                            <div className="text-xs text-zinc-500">{source.slug}</div>
+	                          </td>
+	                          <td className="px-3 py-3"><StatusBadge status={source.enabled ? source.lastStatus : 'disabled'} /></td>
+	                          <td className="px-3 py-3">
+	                            <div className="text-xs text-zinc-300">{source.category || '-'}</div>
+	                            <div className="mt-1 font-mono text-[11px] text-zinc-500">{String(rawConfig.parser || 'generic-prompt-site')}</div>
+	                          </td>
+	                          <td className="px-3 py-3 text-cyan-200">{formatNumber(source._count.candidates)}</td>
+	                          <td className="px-3 py-3 text-zinc-400">{source.frequencyMins} 分钟</td>
+	                          <td className="px-3 py-3">
                             {source.url ? (
                               <a className="inline-flex items-center gap-1 text-xs text-cyan-300 hover:text-cyan-100" href={source.url} target="_blank" rel="noreferrer">
                                 打开 <ArrowUpRight className="h-3 w-3" />
                               </a>
                             ) : <span className="text-zinc-600">-</span>}
                           </td>
-                        </tr>
-                      ))}
+	                        </tr>
+	                        )
+	                      })}
                     </tbody>
                   </table>
                 </div>
@@ -1543,7 +2095,7 @@ export default async function CollectorPage({ searchParams = {} }: PageProps) {
                 icon={ListChecks}
                 title="GitHub 指标补全"
                 count={0}
-                command="npm run collector:sync-github-stars -- --source skills-sh --limit 50000 --repo-limit 5000 --concurrency 4"
+                command="npm run collector:sync-github-stars -- --limit 100000 --repo-limit 5000 --concurrency 4"
                 description="用 GitHub Token 快速补齐源仓库 star 和 fork，不拉 release，历史数据和仓库列表排序都会更新。"
               />
               <ToolCard
@@ -1582,7 +2134,7 @@ export default async function CollectorPage({ searchParams = {} }: PageProps) {
                 <div className="grid gap-3 md:grid-cols-2">
                   <CommandBlock title="修正超时任务" command="npm run collector:admin -- mark-stale-runs --minutes 10" />
                   <CommandBlock title="清理低质量 Skill" command="npm run collector:admin -- clean-low-quality-external-skills" />
-                  <CommandBlock title="同步 GitHub Star" command="npm run collector:sync-github-stars -- --source skills-sh --limit 50000 --repo-limit 5000 --concurrency 4" />
+                  <CommandBlock title="同步 GitHub Star" command="npm run collector:sync-github-stars -- --limit 100000 --repo-limit 5000 --concurrency 4" />
                   <CommandBlock title="同步到原技能库" command="npm run collector:sync-skills -- --limit 50000 --repo-limit 5000" />
                   <CommandBlock title="生成能力画像" command="npm run collector:build-capabilities" />
                   <CommandBlock title="同步源配置" command="npm run collector:seed-sources" />
@@ -1626,6 +2178,38 @@ export default async function CollectorPage({ searchParams = {} }: PageProps) {
           {activePage === 'skills' && (
           <>
           <Panel id="skills" title="外部 Skill 原始库" icon={Database} description="这里展示采集到但尚未发布到社区 Skill 库的原始记录，按热度和质量排序。">
+            <div className="mb-4 rounded-md border border-zinc-800 bg-[#0b0f14] p-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-sm font-medium text-zinc-100">
+                  <PackageCheck className="h-4 w-4 text-cyan-300" />
+                  Skill 知识库版本迭代
+                </div>
+                <Link className="inline-flex h-8 items-center gap-1 rounded-md border border-cyan-500/50 bg-cyan-400/10 px-2.5 text-xs font-medium text-cyan-100 hover:border-cyan-300" href={switchHref('deploy')}>
+                  上传部署包
+                  <ArrowUpRight className="h-3 w-3" />
+                </Link>
+              </div>
+              <div className="mt-3 grid gap-2 md:grid-cols-3">
+                {deploymentVersions.slice(0, 3).map(version => (
+                  <div key={version.id} className="rounded border border-zinc-800 bg-zinc-950/70 px-3 py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-mono text-sm text-cyan-200">{version.version}</span>
+                      <span className={`rounded-full border px-2 py-0.5 text-[11px] ${statusClass(version.status)}`}>{version.statusLabel || version.status}</span>
+                    </div>
+                    <div className="mt-1 truncate text-xs text-zinc-500">{version.title || version.packageName || '-'}</div>
+                    <div className="mt-2 grid grid-cols-2 gap-1 text-[11px] text-zinc-600">
+                      <span>external {formatNumber(version.externalSkillCount)}</span>
+                      <span>published {formatNumber(version.skillCount)}</span>
+                    </div>
+                  </div>
+                ))}
+                {deploymentVersions.length === 0 && (
+                  <div className="rounded border border-zinc-800 bg-zinc-950/70 px-3 py-4 text-sm text-zinc-500 md:col-span-3">
+                    暂无版本记录，上传第一个部署包后会生成 0.0.1。
+                  </div>
+                )}
+              </div>
+            </div>
             <div className="max-h-[680px] overflow-auto">
               <table className="w-full min-w-[1380px] text-left text-sm">
                 <thead className="text-xs text-zinc-500">
@@ -1635,7 +2219,7 @@ export default async function CollectorPage({ searchParams = {} }: PageProps) {
                     <th className="py-3 pr-3">来源</th>
                     <th className="py-3 pr-3">GitHub 源仓库</th>
                     <th className="py-3 pr-3">Stars / Forks</th>
-                    <th className="py-3 pr-3">下载量</th>
+                    <th className="py-3 pr-3">安装/下载</th>
                     <th className="py-3 pr-3">中文分类</th>
                     <th className="py-3 pr-3">标签</th>
                     <th className="py-3 pr-3">采集时间</th>
@@ -1645,6 +2229,7 @@ export default async function CollectorPage({ searchParams = {} }: PageProps) {
                 <tbody>
                   {externalSkills.map(skill => {
                     const github = githubInfoFromSkill(skill)
+                    const classifier = classifierInfoFromSkill(skill)
                     const originalLink = github.sourceUrl || skill.githubUrl || skill.sourceUrl
                     return (
                       <tr key={skill.id} className="border-b border-zinc-900 align-top">
@@ -1675,14 +2260,22 @@ export default async function CollectorPage({ searchParams = {} }: PageProps) {
                         <td className="py-3 pr-3">
                           <div className="font-mono text-xs text-zinc-200">{formatNumber(github.stars)} ★</div>
                           <div className="mt-1 font-mono text-[11px] text-zinc-500">{formatNumber(github.forks)} forks</div>
+                          {github.stars === 0 && <div className="mt-1 text-[11px] text-amber-300">待 GitHub 同步</div>}
                         </td>
                         <td className="py-3 pr-3">
                           <div className="font-mono text-xs text-zinc-200">{formatNumber(github.downloads)}</div>
-                          <div className="mt-1 text-[11px] text-zinc-500">{github.latestReleaseUrl ? 'release assets' : 'installs / release'}</div>
+                          <div className="mt-1 text-[11px] text-zinc-500">skills.sh installs / release</div>
                         </td>
-                        <td className="py-3 pr-3 text-zinc-300">{skill.categoryZh || '未分类'}</td>
+                        <td className="py-3 pr-3 text-zinc-300">
+                          <div>{classifier.categoryZh}</div>
+                          <div className="mt-1 font-mono text-[11px] text-cyan-300">conf {formatNumber(classifier.confidence)}</div>
+                          <div className="mt-1 max-w-[220px] text-[11px] leading-4 text-zinc-500">{classifier.matchedKeywords.slice(0, 4).join(' / ') || '待回填解释'}</div>
+                        </td>
                         <td className="py-3 pr-3">
-                          <TagList tags={splitList(skill.tagsZh).slice(0, 4)} />
+                          <TagList tags={classifier.tagsZh.slice(0, 4)} />
+                          {classifier.capabilityHints.length > 0 ? (
+                            <div className="mt-1 text-[11px] text-emerald-300">能力池反哺</div>
+                          ) : null}
                         </td>
                         <td className="py-3 pr-3 text-zinc-500">{formatDate(skill.collectedAt)}</td>
                         <td className="py-3">
@@ -1831,6 +2424,22 @@ function MiniStatus({ label, value }: { label: string; value: string }) {
   )
 }
 
+function QualityMeter({ label, value, total, percentLabel, note }: { label: string; value: number; total: number; percentLabel: string; note: string }) {
+  return (
+    <div className="rounded-md border border-zinc-800 bg-[#0b0f14] p-3">
+      <div className="flex items-center justify-between gap-3 text-xs">
+        <span className="text-zinc-400">{label}</span>
+        <span className="font-mono text-cyan-200">{percentLabel}</span>
+      </div>
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-zinc-800">
+        <div className="h-full rounded-full bg-cyan-300" style={{ width: percentLabel }} />
+      </div>
+      <div className="mt-2 font-mono text-lg text-zinc-100">{formatNumber(value)} / {formatNumber(total)}</div>
+      <div className="mt-1 text-[11px] leading-4 text-zinc-500">{note}</div>
+    </div>
+  )
+}
+
 function SourceSummary({ totalCount, aiNewsCount, promptCount, skillsShCount, githubCount }: { totalCount: number; aiNewsCount: number; promptCount: number; skillsShCount: number; githubCount: number }) {
   return (
     <div className="grid gap-3 md:grid-cols-5">
@@ -1856,9 +2465,80 @@ function ConceptTile({ icon: Icon, title, value, note }: { icon: any; title: str
   )
 }
 
+function CapabilityActionPanel({ generatedAt, mode, notes }: { generatedAt?: string; mode: string; notes: string[] }) {
+  const fallbackNotes = [
+    '能力画像只用于采集关键词、来源追踪、分类解释和人工审核信号。',
+    '安全类 Skill 只保存元数据，不执行外部目标扫描、漏洞利用或凭据采集。',
+    '每条可入库 Skill 必须能追溯到 GitHub 源仓库或具体源文件。',
+  ]
+  return (
+    <div className="rounded-md border border-zinc-800 bg-zinc-950/50 p-4">
+      <div className="flex items-center gap-2 text-sm font-medium text-zinc-100">
+        <ShieldCheck className="h-4 w-4 text-cyan-300" />
+        执行边界与画像状态
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        <MiniStatus label="画像生成时间" value={formatDate(generatedAt)} />
+        <MiniStatus label="执行模式" value={mode} />
+        <MiniStatus label="画像文件" value=".collector-state/tool-capabilities.json" />
+      </div>
+      <div className="mt-3 space-y-2 text-xs leading-5 text-zinc-500">
+        {(notes.length ? notes : fallbackNotes).slice(0, 5).map(note => (
+          <p key={note}>{note}</p>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function CommandActionCard({ icon: Icon, title, commandId, command, note }: { icon: any; title: string; commandId: string; command: string; note: string }) {
+  return (
+    <div className="rounded-md border border-zinc-800 bg-[#0b0f14] p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-sm font-medium text-zinc-100">
+            <Icon className="h-4 w-4 text-cyan-300" />
+            {title}
+          </div>
+          <div className="mt-2 truncate rounded border border-zinc-800 bg-zinc-950/70 px-2 py-1.5 font-mono text-[11px] text-zinc-400" title={command}>
+            {command}
+          </div>
+          <div className="mt-2 text-xs leading-5 text-zinc-500">{note}</div>
+        </div>
+        <CollectorCommandRunButton commandId={commandId} label="启动" compact />
+      </div>
+    </div>
+  )
+}
+
+function AutoProcessCard({ icon: Icon, title, status, command, note }: { icon: any; title: string; status: string; command: string; note: string }) {
+  return (
+    <div className="rounded-md border border-zinc-800 bg-[#0b0f14] p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-sm font-medium text-zinc-100">
+            <Icon className="h-4 w-4 text-cyan-300" />
+            {title}
+          </div>
+          <div className="mt-2 truncate rounded border border-zinc-800 bg-zinc-950/70 px-2 py-1.5 font-mono text-[11px] text-zinc-400" title={command}>
+            {command}
+          </div>
+          <div className="mt-2 text-xs leading-5 text-zinc-500">{note}</div>
+        </div>
+        <span className="shrink-0 rounded-full border border-cyan-400/40 bg-cyan-400/10 px-2 py-0.5 text-xs text-cyan-100">
+          {status}
+        </span>
+      </div>
+    </div>
+  )
+}
+
 function CapabilityProfileCard({ title, profile, fallbackSkillCount }: { title: string; profile?: CapabilityProfile; fallbackSkillCount: number }) {
   const topKeywords = profile?.topKeywords || []
   const topRepos = profile?.topRepos || []
+  const codeQueries = profile?.codeQueries || []
+  const repoQueries = profile?.repoQueries || []
+  const topicKeywords = profile?.topicKeywords || []
   return (
     <article className="rounded-md border border-zinc-800 bg-zinc-950/50 p-4">
       <div className="flex items-start justify-between gap-3">
@@ -1870,9 +2550,9 @@ function CapabilityProfileCard({ title, profile, fallbackSkillCount }: { title: 
       </div>
       <div className="mt-4 grid gap-2 sm:grid-cols-4">
         <MiniStatus label="Skill" value={formatNumber(Number(profile?.skillCount || fallbackSkillCount || 0))} />
+        <MiniStatus label="有效 Skill" value={formatNumber(Number(profile?.activeSkillCount || 0))} />
         <MiniStatus label="仓库" value={formatNumber(Number(profile?.repoCount || 0))} />
         <MiniStatus label="关键词" value={formatNumber(Number(profile?.keywordCount || topKeywords.length || 0))} />
-        <MiniStatus label="查询" value={formatNumber(Number(profile?.queryCount || 0))} />
       </div>
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <div>
@@ -1893,6 +2573,11 @@ function CapabilityProfileCard({ title, profile, fallbackSkillCount }: { title: 
           </div>
         </div>
       </div>
+      <div className="mt-4 grid gap-3 lg:grid-cols-3">
+        <QueryPreview title="Code Query" rows={codeQueries.slice(0, 4)} />
+        <QueryPreview title="Repo Query" rows={repoQueries.slice(0, 4)} />
+        <QueryPreview title="分类关键词" rows={topicKeywords.slice(0, 8)} />
+      </div>
       <div className="mt-4 rounded-md border border-zinc-800 bg-[#0b0f14] p-3 text-xs leading-5 text-zinc-400">
         {(profile?.toolHints || []).slice(0, 3).map(hint => (
           <p key={hint}>{hint}</p>
@@ -1900,6 +2585,166 @@ function CapabilityProfileCard({ title, profile, fallbackSkillCount }: { title: 
         {!profile && <p>画像生成后，专项采集器会自动读取新增 codeQueries、repoQueries 和 topicKeywords。</p>}
       </div>
     </article>
+  )
+}
+
+function CapabilityQueryMatrix({ title, profile }: { title: string; profile?: CapabilityProfile }) {
+  const codeQueries = profile?.codeQueries || []
+  const repoQueries = profile?.repoQueries || []
+  const topicKeywords = profile?.topicKeywords || []
+  const topRepos = profile?.topRepos || []
+  return (
+    <div className="rounded-md border border-zinc-800 bg-zinc-950/40 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="font-medium text-zinc-100">{title}</div>
+          <div className="mt-1 text-xs text-zinc-500">{profile?.sourceSlug || '等待生成能力画像'}</div>
+        </div>
+        <StatusBadge status={profile ? 'success' : 'idle'} />
+      </div>
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        <QueryPreview title={`Code Search · ${formatNumber(codeQueries.length)}`} rows={codeQueries.slice(0, 10)} />
+        <QueryPreview title={`Repo Search · ${formatNumber(repoQueries.length)}`} rows={repoQueries.slice(0, 10)} />
+        <QueryPreview title={`Topic Keywords · ${formatNumber(topicKeywords.length)}`} rows={topicKeywords.slice(0, 14)} />
+        <div className="rounded-md border border-zinc-800 bg-[#0b0f14] p-3">
+          <div className="mb-2 text-xs font-medium text-zinc-300">源仓库种子 · {formatNumber(topRepos.length)}</div>
+          <div className="space-y-1">
+            {topRepos.slice(0, 8).map(repo => (
+              <a key={repo.repo} className="flex items-center justify-between gap-3 rounded border border-zinc-800 bg-zinc-950/70 px-2 py-1.5 text-xs hover:border-cyan-500/50" href={repo.sourceUrl || `https://github.com/${repo.repo}`} target="_blank" rel="noreferrer">
+                <span className="truncate font-mono text-cyan-300">{repo.repo}</span>
+                <span className="shrink-0 text-zinc-500">{formatNumber(repo.stars)} stars</span>
+              </a>
+            ))}
+            {topRepos.length === 0 && <div className="text-xs text-zinc-600">等待生成</div>}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function DeepSeekPlanPanel({ plan }: { plan: any }) {
+  if (!plan) {
+    return (
+      <div className="rounded-md border border-zinc-800 bg-zinc-950/50 p-4">
+        <div className="flex items-center gap-2 text-sm font-medium text-zinc-100">
+          <BrainCircuit className="h-4 w-4 text-cyan-300" />
+          最近增长计划
+        </div>
+        <div className="mt-4 rounded-md border border-zinc-800 bg-[#0b0f14] px-3 py-8 text-sm text-zinc-500">
+          还没有 DeepSeek 增长计划，先运行“构建知识库”，再运行“生成增长计划”。
+        </div>
+      </div>
+    )
+  }
+
+  const skill = plan.skill || {}
+  const news = plan.news || {}
+  const prompts = plan.prompts || {}
+  const commands = Array.isArray(plan.commands) ? plan.commands : []
+  const notes = Array.isArray(plan.notes) ? plan.notes : []
+
+  return (
+    <div className="rounded-md border border-zinc-800 bg-zinc-950/50 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2 text-sm font-medium text-zinc-100">
+            <BrainCircuit className="h-4 w-4 text-cyan-300" />
+            最近增长计划
+          </div>
+          <div className="mt-1 text-xs text-zinc-500">{formatDate(plan.generatedAt)} · {plan.model || 'fallback'}</div>
+        </div>
+        <StatusBadge status={plan.ok ? 'success' : 'failed'} />
+      </div>
+
+      {plan.error ? (
+        <div className="mt-3 rounded-md border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">
+          {plan.error}
+        </div>
+      ) : null}
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-3">
+        <PlanColumn title="Skill 增长" goal={skill.goal} reason={skill.reason} rows={[
+          ['skills.sh', skill.skillsShQueries],
+          ['GitHub Code', skill.githubCodeQueries],
+          ['GitHub Repo', skill.githubRepoQueries],
+        ]} />
+        <PlanColumn title="AI 资讯增长" goal={news.goal} reason={news.reason} rows={[
+          ['Topics', news.topics],
+          ['Sources', news.prioritySources],
+        ]} />
+        <PlanColumn title="提示词增长" goal={prompts.goal} reason={prompts.reason} rows={[
+          ['Queries', prompts.queries],
+          ['Sources', prompts.prioritySources],
+        ]} />
+      </div>
+
+      <div className="mt-4 rounded-md border border-zinc-800 bg-[#0b0f14] p-3">
+        <div className="mb-2 text-xs font-medium text-zinc-300">推荐命令</div>
+        <div className="space-y-2">
+          {commands.slice(0, 8).map((command: any) => (
+            <div key={`${command.commandId}-${command.reason}`} className="flex items-start justify-between gap-3 rounded border border-zinc-800 bg-zinc-950/70 px-2 py-2">
+              <div>
+                <div className="font-mono text-xs text-cyan-200">{command.commandId}</div>
+                <div className="mt-1 text-xs text-zinc-500">{command.reason}</div>
+              </div>
+              <CollectorCommandRunButton commandId={command.commandId} label="启动" compact />
+            </div>
+          ))}
+          {commands.length === 0 && <div className="text-xs text-zinc-600">暂无推荐命令。</div>}
+        </div>
+      </div>
+
+      {notes.length > 0 && (
+        <div className="mt-4 space-y-1 text-xs leading-5 text-zinc-500">
+          {notes.slice(0, 6).map((note: string) => <p key={note}>{note}</p>)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function PlanColumn({ title, goal, reason, rows }: { title: string; goal?: string; reason?: string; rows: Array<[string, any]> }) {
+  return (
+    <div className="rounded-md border border-zinc-800 bg-[#0b0f14] p-3">
+      <div className="text-sm font-medium text-zinc-100">{title}</div>
+      <div className="mt-1 text-xs leading-5 text-zinc-500">{goal || '-'}</div>
+      <div className="mt-3 space-y-2">
+        {rows.map(([label, value]) => (
+          <div key={label}>
+            <div className="mb-1 text-[11px] text-zinc-500">{label}</div>
+            <TagList tags={(Array.isArray(value) ? value : []).slice(0, 10).map(String)} />
+          </div>
+        ))}
+      </div>
+      {reason ? <div className="mt-3 text-xs leading-5 text-zinc-500">{reason}</div> : null}
+    </div>
+  )
+}
+
+function ProcessBlock({ title, command, note }: { title: string; command: string; note: string }) {
+  return (
+    <div className="rounded-md border border-zinc-800 bg-zinc-950/50 p-4">
+      <div className="text-sm font-medium text-zinc-100">{title}</div>
+      <div className="mt-2 rounded border border-zinc-800 bg-[#0b0f14] px-2 py-1.5 font-mono text-xs text-cyan-200">{command}</div>
+      <div className="mt-3 text-xs leading-5 text-zinc-500">{note}</div>
+    </div>
+  )
+}
+
+function QueryPreview({ title, rows }: { title: string; rows: string[] }) {
+  return (
+    <div className="rounded-md border border-zinc-800 bg-[#0b0f14] p-3">
+      <div className="mb-2 text-xs font-medium text-zinc-300">{title}</div>
+      <div className="space-y-1">
+        {rows.map(row => (
+          <div key={row} className="truncate rounded border border-zinc-800 bg-zinc-950/70 px-2 py-1 font-mono text-[11px] text-zinc-400" title={row}>
+            {row}
+          </div>
+        ))}
+        {rows.length === 0 && <div className="text-xs text-zinc-600">等待生成</div>}
+      </div>
+    </div>
   )
 }
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowUpRight, RefreshCw } from 'lucide-react'
 import CollectorRunButton from './CollectorRunButton'
 
@@ -47,10 +47,31 @@ export type SkillsShLiveData = {
     scrollSteps: number
     delayMs: number
     maxClicks: number
+    maxPagesPerRun: number
+    rotatePages: boolean
+    includeSeen: boolean
+  }
+  browserRotation: {
+    nextUrlIndex: number
+    nextUrlIndexUpdatedAt: string | null
+    discoveredPageCount: number
+    lastRunAt: string | null
+    lastRun: {
+      url: string | null
+      totalParsed: number
+      emittedCount: number
+      freshCount: number
+      replayCount: number
+      seenCount: number
+      startedAt: string | null
+      finishedAt: string | null
+    } | null
   }
   browserPages: Array<{
     url: string
     freshCount?: number
+    emittedCount?: number
+    replayCount?: number
     totalParsed?: number
     seenCount?: number
     lastRunAt?: string
@@ -101,8 +122,13 @@ export default function SkillsShLiveProgress({ initialData }: SkillsShLiveProgre
   const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const loadingRef = useRef(false)
+  const skillsShStoredTotal = data.skillsShBrowserTotal + data.skillsShTotal + data.skillsShSearchTotal + data.skillsShGithubTotal
+  const publicSkillTarget = data.installSignalTotal || data.targetTotal || data.publicVisibleTotal
 
   async function load() {
+    if (loadingRef.current) return
+    loadingRef.current = true
     setIsRefreshing(true)
     try {
       const response = await fetch('/api/collector/skills-sh-live', { cache: 'no-store' })
@@ -114,6 +140,7 @@ export default function SkillsShLiveProgress({ initialData }: SkillsShLiveProgre
     } catch (err) {
       setError(err instanceof Error ? err.message : '实时数据刷新失败')
     } finally {
+      loadingRef.current = false
       setIsRefreshing(false)
     }
   }
@@ -122,7 +149,7 @@ export default function SkillsShLiveProgress({ initialData }: SkillsShLiveProgre
     void load()
     const timer = window.setInterval(() => {
       if (document.visibilityState === 'visible') void load()
-    }, 3000)
+    }, 5000)
     return () => window.clearInterval(timer)
   }, [])
 
@@ -136,7 +163,7 @@ export default function SkillsShLiveProgress({ initialData }: SkillsShLiveProgre
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-cyan-400/20 bg-cyan-400/5 px-3 py-2 text-xs">
         <div className="flex items-center gap-2 text-cyan-100">
           <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
-          <span>实时刷新 · 3 秒</span>
+          <span>实时刷新 · 5 秒</span>
           <span className={error ? 'text-red-300' : 'text-zinc-500'}>{refreshLabel}</span>
         </div>
         <button
@@ -151,8 +178,8 @@ export default function SkillsShLiveProgress({ initialData }: SkillsShLiveProgre
       <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
         <div className="space-y-4">
           <div className="grid gap-3 md:grid-cols-2">
-            <ProgressMetric label="断点已见 Skill" value={data.browserSeenCount} total={data.publicVisibleTotal || data.targetTotal} note={`本地状态文件 ${data.browserConfig.stateFile}`} />
-            <ProgressMetric label="skills.sh All Time" value={data.installSignalTotal} total={data.targetTotal} note={`${data.skillsShStatsMode} ${formatDate(data.skillsShStatsSyncedAt)}`} />
+            <ProgressMetric label="断点已见 Skill" value={data.browserSeenCount} total={data.publicVisibleTotal || data.browserSeenCount} note={`本地状态文件 ${data.browserConfig.stateFile}`} />
+            <ProgressMetric label="All Time 累计安装" value={data.installSignalTotal} total={publicSkillTarget} note={`skills.sh 当前视图 Skill ${formatNumber(data.publicVisibleTotal)} · ${data.skillsShStatsMode} ${formatDate(data.skillsShStatsSyncedAt)}`} />
           </div>
           <div className="grid gap-3 md:grid-cols-3">
             <MiniStatus label="已入库，浏览器慢爬" value={formatNumber(data.skillsShBrowserTotal)} />
@@ -166,8 +193,10 @@ export default function SkillsShLiveProgress({ initialData }: SkillsShLiveProgre
             <MiniStatus label="GitHub 上轮新增" value={formatNumber(data.githubSourceState.collectedCount)} />
             <MiniStatus label="全网索引已入库" value={formatNumber(data.githubGlobalIndexTotal)} />
             <MiniStatus label="全网索引 Query" value={`${formatNumber(data.githubIndexState.nextQueryIndex)}/${formatNumber(data.githubIndexState.queryCount)}`} />
-            <MiniStatus label="公开 Skill 总量" value={formatNumber(data.publicVisibleTotal)} />
-            <MiniStatus label="All Time 同步" value={formatNumber(data.installSignalTotal)} />
+            <MiniStatus label="skills.sh 当前视图 Skill" value={formatNumber(data.publicVisibleTotal)} />
+            <MiniStatus label="All Time 累计安装" value={formatNumber(data.installSignalTotal)} />
+            <MiniStatus label="skills.sh 链路入库" value={formatNumber(skillsShStoredTotal)} />
+            <MiniStatus label="本地扩采超出当前视图" value={formatNumber(Math.max(0, skillsShStoredTotal - data.publicVisibleTotal))} />
             <MiniStatus label="同步模式" value={data.skillsShStatsMode} />
             <MiniStatus label="常驻采集" value={data.skillsShDaemonStatus} />
             <MiniStatus label="Daemon PID" value={String(data.skillsShDaemonPid || '-')} />
@@ -216,7 +245,22 @@ export default function SkillsShLiveProgress({ initialData }: SkillsShLiveProgre
               <span>滚动步数 {formatNumber(data.browserConfig.scrollSteps)}</span>
               <span>滚动延迟 {formatNumber(data.browserConfig.delayMs)} ms</span>
               <span>点击预算 {formatNumber(data.browserConfig.maxClicks)}</span>
+              <span>每轮页面 {formatNumber(data.browserConfig.maxPagesPerRun || data.browserRotation.discoveredPageCount)}</span>
+              <span>下轮页码 {formatNumber(data.browserRotation.nextUrlIndex + 1)}/{formatNumber(data.browserRotation.discoveredPageCount)}</span>
+              <span>轮转 {data.browserConfig.rotatePages ? '开启' : '关闭'}</span>
+              <span>重放已见 {data.browserConfig.includeSeen ? '开启' : '关闭'}</span>
             </div>
+            {data.browserRotation.lastRun && (
+              <div className="mt-3 rounded border border-zinc-800 bg-zinc-950/60 p-2 text-xs text-zinc-400">
+                <div className="font-medium text-zinc-200">最近慢爬页：{trim(data.browserRotation.lastRun.url || '-', 78)}</div>
+                <div className="mt-1 grid gap-2 sm:grid-cols-4">
+                  <span>Parsed {formatNumber(data.browserRotation.lastRun.totalParsed)}</span>
+                  <span>Emitted {formatNumber(data.browserRotation.lastRun.emittedCount)}</span>
+                  <span>Fresh {formatNumber(data.browserRotation.lastRun.freshCount)}</span>
+                  <span>Replay {formatNumber(data.browserRotation.lastRun.replayCount)}</span>
+                </div>
+              </div>
+            )}
             <div className="mt-3">
               <CollectorRunButton sourceSlug="skills-sh-browser-slow" label="手动补跑一轮" compact />
             </div>
@@ -228,6 +272,8 @@ export default function SkillsShLiveProgress({ initialData }: SkillsShLiveProgre
               <tr className="border-b border-zinc-800">
                 <th className="px-3 py-3">页面</th>
                 <th className="px-3 py-3">Fresh</th>
+                <th className="px-3 py-3">Emitted</th>
+                <th className="px-3 py-3">Replay</th>
                 <th className="px-3 py-3">Parsed</th>
                 <th className="px-3 py-3">Seen</th>
                 <th className="px-3 py-3">最近运行</th>
@@ -242,6 +288,8 @@ export default function SkillsShLiveProgress({ initialData }: SkillsShLiveProgre
                     </a>
                   </td>
                   <td className="px-3 py-3 text-emerald-200">{formatNumber(Number(page.freshCount || 0))}</td>
+                  <td className="px-3 py-3 text-cyan-200">{formatNumber(Number(page.emittedCount || 0))}</td>
+                  <td className="px-3 py-3 text-amber-200">{formatNumber(Number(page.replayCount || 0))}</td>
                   <td className="px-3 py-3 text-zinc-300">{formatNumber(Number(page.totalParsed || 0))}</td>
                   <td className="px-3 py-3 text-zinc-300">{formatNumber(Number(page.seenCount || 0))}</td>
                   <td className="px-3 py-3 text-zinc-500">{formatDate(page.lastRunAt)}</td>
@@ -249,7 +297,7 @@ export default function SkillsShLiveProgress({ initialData }: SkillsShLiveProgre
               ))}
               {data.browserPages.length === 0 && (
                 <tr>
-                  <td className="px-3 py-6 text-sm text-zinc-500" colSpan={5}>还没有慢爬 checkpoint，启动一次 skills.sh 慢爬后这里会出现页面进度。</td>
+                  <td className="px-3 py-6 text-sm text-zinc-500" colSpan={7}>还没有慢爬 checkpoint，启动一次 skills.sh 慢爬后这里会出现页面进度。</td>
                 </tr>
               )}
             </tbody>

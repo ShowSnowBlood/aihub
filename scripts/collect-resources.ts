@@ -10,6 +10,7 @@ import os from 'node:os'
 import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { request as httpsRequest } from 'node:https'
 import { request as httpRequest } from 'node:http'
+import { classifySkill, semanticSkillTags } from '../src/lib/skill-classifier'
 import { defaultCollectionSources, deprecatedCollectionSourceSlugs } from './collection-sources'
 
 const prisma = new PrismaClient()
@@ -80,6 +81,19 @@ function loadLocalEnv() {
       process.env[key] = parseEnvValue(rawValue)
     }
   }
+}
+
+function scraplingPythonPath() {
+  const configured = process.env.SCRAPLING_PYTHON_PATH || process.env.PYTHON_PATH
+  if (configured && existsSync(configured)) return configured
+
+  const localVenv =
+    process.platform === 'win32'
+      ? path.join(process.cwd(), '.venv-scrapling', 'Scripts', 'python.exe')
+      : path.join(process.cwd(), '.venv-scrapling', 'bin', 'python')
+  if (existsSync(localVenv)) return localVenv
+
+  return process.platform === 'win32' ? 'python' : 'python3'
 }
 
 const PROJECT_SKILL_PATHS = ['.agents/skills', '.codex/skills', 'skills', 'agent-skills']
@@ -204,9 +218,7 @@ const classificationNoiseTags = new Set([
 ])
 
 function semanticTags(tags: string[] = []) {
-  return tags
-    .map(tag => cleanText(tag).trim())
-    .filter(tag => tag && !classificationNoiseTags.has(tag.toLowerCase()))
+  return semanticSkillTags(tags.map(tag => cleanText(tag).trim()))
 }
 
 function semanticSkillText(item: RawItem, extraTags: string[] = []) {
@@ -214,9 +226,34 @@ function semanticSkillText(item: RawItem, extraTags: string[] = []) {
   return `${item.title} ${item.summary || ''} ${item.contentSnippet || ''} ${tags.join(' ')} ${item.category || ''}`
 }
 
+function classifySkillForRawItem(item: RawItem, tags: string[] = [], source?: any) {
+  const raw = item.rawData || {}
+  const github = (raw as any).github && typeof (raw as any).github === 'object' ? (raw as any).github : {}
+  return classifySkill({
+    name: item.title,
+    description: cleanText(item.summary || item.contentSnippet || ''),
+    category: firstString(item.category, source?.category),
+    tags: [...(item.tags || []), ...tags],
+    sourceSlug: source?.slug,
+    sourceUrl: item.sourceUrl,
+    githubUrl: firstString((raw as any).githubUrl, (raw as any).github_url, github.url, github.repoUrl, item.canonicalUrl),
+    repo: firstString(
+      (raw as any).originalRepo,
+      (raw as any).sourceRepo,
+      (raw as any).repo,
+      (raw as any).source,
+      github.originalRepo,
+      github.sourceRepo,
+      github.repo,
+    ),
+    path: firstString((raw as any).skillMdPath, (raw as any).file, github.skillMdPath, github.skillPath),
+    rawData: raw,
+    capabilityKeywords: source?.slug ? topicKeywordsFromCapabilityState(source.slug).slice(0, 40) : [],
+  }, firstString(source?.category, item.category, '通用 Agent Skill'))
+}
+
 function classifySkillZh(text: string, fallback = '通用 Agent Skill') {
-  const value = text.toLowerCase()
-  return skillCategoryMap.find(item => item.keywords.some(keyword => value.includes(keyword)))?.categoryZh || fallback
+  return classifySkill({ name: text }, fallback).categoryZh
 }
 
 function classifyPromptIndustry(text: string, fallback = '通用提示词') {
@@ -239,21 +276,11 @@ function classifyPromptIndustry(text: string, fallback = '通用提示词') {
 function categoryZhFor(item: RawItem, tags: string[]) {
   const category = firstString(item.category)
   if (category && /[\u4e00-\u9fff]/.test(category)) return category
-  return classifySkillZh(semanticSkillText(item, tags), '通用 Agent Skill')
+  return classifySkillForRawItem(item, tags).categoryZh
 }
 
 function translateTagsZh(tags: string[]) {
-  const values = new Set<string>()
-  for (const tag of semanticTags(tags)) {
-    const category = classifySkillZh(tag, '')
-    if (category) values.add(category)
-    if (/github/i.test(tag)) values.add('GitHub')
-    if (/api/i.test(tag)) values.add('API 调用')
-    if (/mcp/i.test(tag)) values.add('MCP')
-    if (/rag/i.test(tag)) values.add('RAG')
-    if (/agent/i.test(tag)) values.add('Agent')
-  }
-  return Array.from(values).slice(0, 8)
+  return classifySkill({ tags }).tagsZh
 }
 
 function tagsFor(item: RawItem) {
@@ -535,7 +562,12 @@ async function collectGithub(source: any): Promise<RawItem[]> {
   const response = await fetch(url, { headers: githubHeaders() })
   if (!response.ok) throw new Error(`GitHub API ${response.status}`)
   const data = await response.json()
-  return (data.items || []).map((repo: any) => ({
+  const repositories = []
+  for (const repo of data.items || []) {
+    repositories.push(await fetchGithubRepoInfo(repo.full_name, repo))
+  }
+
+  return repositories.filter(Boolean).map((repo: any) => ({
     type: 'github',
     title: repo.full_name,
     sourceName: 'GitHub',
@@ -757,7 +789,7 @@ async function fetchPublicHtml(url: string, timeoutMs = 45000) {
 async function collectSiteList(source: any): Promise<RawItem[]> {
   if (!source.url) return []
   const config = parseJson<Record<string, any>>(source.config, {})
-  const pythonPath = path.join(process.cwd(), '.venv-scrapling', 'Scripts', 'python.exe')
+  const pythonPath = scraplingPythonPath()
   const bridge = path.join(process.cwd(), 'scripts', 'scrapling_site_bridge.py')
   const result = spawnSync(pythonPath, [
     bridge,
@@ -1155,6 +1187,7 @@ function rawItemMatchesStrictTopic(item: RawItem, sourceSlug: string) {
   const haystack = rawItemTopicText(item)
   const repo = rawItemGithubRepoKey(item)
   if (!repo) return false
+  if (isPlaceholderGithubRepo(repo)) return false
   if (isAggregateSkillRepoName(repo) || isAggregateSkillRepo(repo, item.rawData as Record<string, any>)) return false
   if (topicTextContainsAny(haystack, strictTopicExclusions)) return false
   if (sourceSlug === 'github-python-crawler-skill-index') {
@@ -1195,6 +1228,7 @@ function rawItemMatchesTopicKeywords(item: RawItem, config: Record<string, any>)
 }
 
 const TOOL_CAPABILITY_STATE_FILE = '.collector-state/tool-capabilities.json'
+const DEEPSEEK_GROWTH_PLAN_FILE = '.collector-state/deepseek-growth-plan.json'
 
 type ToolCapabilityProfileLite = {
   generatedAt?: string
@@ -1203,6 +1237,8 @@ type ToolCapabilityProfileLite = {
   codeQueries?: string[]
   repoQueries?: string[]
   topicKeywords?: string[]
+  topKeywords?: Array<{ value?: string; count?: number }>
+  toolHints?: string[]
 }
 
 type ToolCapabilityStateLite = {
@@ -1210,7 +1246,23 @@ type ToolCapabilityStateLite = {
   profiles?: Record<string, ToolCapabilityProfileLite>
 }
 
+type DeepSeekGrowthPlanLite = {
+  generatedAt?: string
+  skill?: {
+    skillsShQueries?: string[]
+    githubCodeQueries?: string[]
+    githubRepoQueries?: string[]
+  }
+  prompts?: {
+    queries?: string[]
+  }
+  news?: {
+    topics?: string[]
+  }
+}
+
 let toolCapabilityStateCache: ToolCapabilityStateLite | null | undefined
+let deepSeekGrowthPlanCache: DeepSeekGrowthPlanLite | null | undefined
 
 function compactStringList(values: unknown[], limit = 500) {
   const seen = new Set<string>()
@@ -1243,6 +1295,43 @@ function loadToolCapabilityState(): ToolCapabilityStateLite | null {
   }
 }
 
+function loadDeepSeekGrowthPlan(): DeepSeekGrowthPlanLite | null {
+  if (deepSeekGrowthPlanCache !== undefined) return deepSeekGrowthPlanCache
+  const statePath = path.join(process.cwd(), DEEPSEEK_GROWTH_PLAN_FILE)
+  if (!existsSync(statePath)) {
+    deepSeekGrowthPlanCache = null
+    return deepSeekGrowthPlanCache
+  }
+  try {
+    deepSeekGrowthPlanCache = JSON.parse(readFileSync(statePath, 'utf8')) as DeepSeekGrowthPlanLite
+    return deepSeekGrowthPlanCache
+  } catch {
+    deepSeekGrowthPlanCache = null
+    return deepSeekGrowthPlanCache
+  }
+}
+
+function deepSeekSkillQueries(kind: 'skillsShQueries' | 'githubCodeQueries' | 'githubRepoQueries') {
+  const plan = loadDeepSeekGrowthPlan()
+  const values = plan?.skill?.[kind]
+  return Array.isArray(values) ? compactStringList(values, 120) : []
+}
+
+function deepSeekPromptQueries() {
+  const values = loadDeepSeekGrowthPlan()?.prompts?.queries
+  return Array.isArray(values) ? compactStringList(values, 120) : []
+}
+
+function topicKeywordsFromCapabilityState(sourceSlug?: string | null) {
+  const profile = loadToolCapabilityState()?.profiles?.[String(sourceSlug || '')]
+  if (!profile) return []
+  return compactStringList([
+    ...(Array.isArray(profile.topicKeywords) ? profile.topicKeywords : []),
+    ...(Array.isArray(profile.topKeywords) ? profile.topKeywords.map(item => item?.value || '') : []),
+    ...(Array.isArray(profile.toolHints) ? profile.toolHints : []),
+  ], 160)
+}
+
 function enhancedGithubSkillConfig(
   sourceSlug: string,
   config: Record<string, any>,
@@ -1259,10 +1348,12 @@ function enhancedGithubSkillConfig(
     codeQueries: compactStringList([
       ...(Array.isArray(config.codeQueries) ? config.codeQueries : []),
       ...(Array.isArray(profile.codeQueries) ? profile.codeQueries : []),
+      ...deepSeekSkillQueries('githubCodeQueries'),
     ], codeQueryLimit),
     repoQueries: compactStringList([
       ...(Array.isArray(config.repoQueries) ? config.repoQueries : []),
       ...(Array.isArray(profile.repoQueries) ? profile.repoQueries : []),
+      ...deepSeekSkillQueries('githubRepoQueries'),
     ], repoQueryLimit),
     topicKeywords: compactStringList([
       ...(Array.isArray(config.topicKeywords) ? config.topicKeywords : []),
@@ -1300,7 +1391,10 @@ async function collectAiShortPromptsApi(source: any, config: Record<string, any>
   const cursors = (state.cursors && typeof state.cursors === 'object' ? state.cursors : {}) as Record<string, any>
   const nextCursors: Record<string, any> = { ...cursors }
   const sorts = aiShortSorts(config)
-  const queries = (Array.isArray(config.queries) ? config.queries : []).map((item: unknown) => firstString(item)).filter(Boolean)
+  const queries = compactStringList([
+    ...(Array.isArray(config.queries) ? config.queries : []),
+    ...deepSeekPromptQueries(),
+  ], 260)
   let totalAvailable = toNumber(state.totalAvailable)
   let apiPages = 0
   let bulkRequests = 0
@@ -1503,6 +1597,261 @@ async function collectAiShortPrompts(source: any): Promise<RawItem[]> {
   return collectAiShortPromptsFromHtml(source)
 }
 
+function promptSourceHost(value?: string | null) {
+  if (!value) return ''
+  try {
+    return new URL(value).hostname.replace(/^www\./i, '')
+  } catch {
+    return ''
+  }
+}
+
+function cleanMarkdownText(value = '') {
+  return cleanText(value
+    .replace(/!\[[^\]]*]\([^)]+\)/g, ' ')
+    .replace(/\[([^\]]+)]\(([^)]+)\)/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/[*_>#|]/g, ' ')
+    .replace(/^\s*[-+]\s+/gm, ' ')
+  )
+}
+
+function promptConfigTags(config: Record<string, any>, source: any, extra: string[] = []) {
+  const configured = Array.isArray(config.tags) ? config.tags.map((tag: unknown) => firstString(tag)).filter(Boolean) : []
+  return Array.from(new Set([
+    'Prompt',
+    '提示词',
+    source.category,
+    ...configured,
+    ...extra,
+  ].filter(Boolean))).slice(0, 14)
+}
+
+function classifyPromptSourceCategory(text: string, fallback = '通用提示词源') {
+  const value = text.toLowerCase()
+  if (/promptbase|flowgpt|snack|hunt|market|community|社区|市场/.test(value)) return '提示词市场社区'
+  if (/midjourney|stable diffusion|dall|image|art|绘图|绘画|生图|视觉|krea|openart/.test(value)) return '绘图提示词工具'
+  if (/guide|tutorial|course|learning|wiki|教程|指南|工程|学习/.test(value)) return '提示工程教程'
+  if (/generator|optimizer|perfect|helper|生成器|优化|改写/.test(value)) return '提示词生成与优化'
+  if (/中文|chinese|chatgpt|fresns|k-render/.test(value)) return '中文提示词库'
+  return fallback
+}
+
+function promptSiteOverviewItem(source: any, config: Record<string, any>, summary = ''): RawItem | null {
+  if (!source.url) return null
+  const host = promptSourceHost(source.url)
+  const category = classifyPromptSourceCategory(`${source.name} ${source.category} ${host} ${summary}`, source.category || '通用提示词源')
+  const overviewSummary = cleanText(firstString(
+    config.overviewSummary,
+    summary,
+    `${source.name} 是从 ai-tishici README 同步的提示词源，可作为后续行业提示词、Prompt 教程或绘图提示词采集入口。`,
+  )).slice(0, 800)
+
+  return {
+    type: 'prompt',
+    title: `${source.name} 提示词源入口`,
+    sourceName: source.name,
+    author: firstString(config.sourceRepo),
+    sourceUrl: source.url,
+    canonicalUrl: `prompt-source:${source.slug}:${normalizeUrl(source.url) || source.url}`,
+    publishedAt: null,
+    summary: overviewSummary,
+    language: source.language || 'multi',
+    region: source.region || 'global',
+    category,
+    tags: promptConfigTags(config, source, [category, host, firstString(config.sourceKind)]),
+    contentSnippet: overviewSummary,
+    rawData: {
+      parser: firstString(config.parser, 'generic-prompt-site'),
+      sourceKind: firstString(config.sourceKind, 'prompt-source'),
+      sourceSite: host,
+      sourceRepo: firstString(config.sourceRepo),
+      sourceRepoUrl: firstString(config.sourceRepoUrl),
+      isOverview: true,
+    },
+  }
+}
+
+function parsePromptDirectoryMarkdown(source: any, markdown: string, config: Record<string, any>): RawItem[] {
+  const lines = markdown.split(/\r?\n/)
+  const items: RawItem[] = []
+  const seen = new Set<string>()
+  let section = source.category || '提示词源目录'
+
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index]
+    const sectionMatch = line.match(/^##\s+(?:\d+[.、]\s*)?(.+?)\s*$/)
+    if (sectionMatch) {
+      section = cleanMarkdownText(sectionMatch[1]).replace(/\s*#.*$/, '').trim() || section
+      continue
+    }
+
+    const linkMatch = line.match(/^###\s+\[([^\]]+)]\((https?:\/\/[^)\s]+)\)/)
+    if (!linkMatch) continue
+    const [, rawTitle, rawUrl] = linkMatch
+    if (/github\.com\/user-attachments\//i.test(rawUrl)) continue
+    const sourceUrl = normalizeUrl(rawUrl) || rawUrl
+    if (seen.has(sourceUrl)) continue
+    seen.add(sourceUrl)
+
+    const blockLines: string[] = []
+    for (let cursor = index + 1; cursor < lines.length; cursor++) {
+      if (/^#{2,3}\s+/.test(lines[cursor])) break
+      if (/^---+\s*$/.test(lines[cursor])) break
+      blockLines.push(lines[cursor])
+    }
+    const block = blockLines.join('\n')
+    const keywordsLine = blockLines.find(item => /关键词|关键字|keywords?/i.test(item)) || ''
+    const highlightLine = blockLines.find(item => /亮点|特点|highlights?/i.test(item)) || ''
+    const title = cleanMarkdownText(rawTitle).slice(0, 220)
+    const host = promptSourceHost(sourceUrl)
+    const summary = cleanMarkdownText(highlightLine || block || `${title} - ${host}`).slice(0, 800)
+    const keywords = cleanMarkdownText(keywordsLine).split(/[、,，\s]+/).map(item => cleanText(item)).filter(item => item && !/关键词|关键字|keywords?/i.test(item)).slice(0, 12)
+    const category = classifyPromptSourceCategory(`${section} ${title} ${host} ${keywords.join(' ')}`, source.category || '提示词源目录')
+    const key = `${source.slug}:${sourceUrl}`
+
+    items.push({
+      type: 'prompt',
+      title,
+      sourceName: source.name,
+      author: firstString(config.sourceRepo),
+      sourceUrl,
+      canonicalUrl: `prompt-directory:${fingerprint(key).slice(0, 16)}`,
+      publishedAt: null,
+      summary,
+      language: source.language || 'multi',
+      region: source.region || 'global',
+      category,
+      tags: promptConfigTags(config, source, [category, section, host, ...keywords]),
+      contentSnippet: cleanMarkdownText(block).slice(0, 2200) || summary,
+      rawData: {
+        parser: 'prompt-directory-markdown',
+        sourceKind: firstString(config.sourceKind, 'prompt-source-directory'),
+        sourceSite: host,
+        directoryCategory: section,
+        directorySourceUrl: source.url,
+        sourceRepo: firstString(config.sourceRepo),
+        sourceRepoUrl: firstString(config.sourceRepoUrl),
+        keywords,
+      },
+    })
+  }
+
+  return items
+}
+
+async function collectPromptDirectoryMarkdown(source: any): Promise<RawItem[]> {
+  if (!source.url) return []
+  const config = parseJson<Record<string, any>>(source.config, {})
+  const timeoutMs = Math.max(10000, Math.min(Number(config.timeoutMs || 45000), 90000))
+  const markdown = await fetchPublicText(source.url, timeoutMs, 'html')
+  const limit = Math.max(1, Math.min(Number(config.limit || 80), 300))
+  return parsePromptDirectoryMarkdown(source, markdown, config).slice(0, limit)
+}
+
+function promptItemFromHtmlElement($: cheerio.CheerioAPI, element: any, source: any, config: Record<string, any>, metaDescription: string, index: number): RawItem | null {
+  const node = $(element)
+  const anchor = node.is('a[href]') ? node : node.find('a[href]').first()
+  const href = firstString(anchor.attr('href'), node.attr('href'), node.attr('data-href'))
+  const sourceUrl = resolveSiteUrl(source.url, href) || source.url
+  if (!sourceUrl || /^(javascript|mailto|tel):/i.test(sourceUrl)) return null
+  if (/#(login|signup|pricing|privacy|terms|contact|about)$/i.test(sourceUrl)) return null
+
+  const title = cleanText(firstString(
+    node.find('h1,h2,h3,h4,[class*="title"],[class*="name"]').first().text(),
+    anchor.text(),
+    node.attr('aria-label'),
+    node.attr('title'),
+  )).slice(0, 220)
+  if (!title || title.length < 3) return null
+  if (/^(home|login|sign up|pricing|docs|blog|about|contact|privacy|terms|twitter|github)$/i.test(title)) return null
+
+  const summary = cleanText(firstString(
+    node.find('p,[class*="desc"],[class*="summary"],[class*="subtitle"],[class*="content"]').first().text(),
+    node.text(),
+    metaDescription,
+  )).slice(0, 800)
+  if (!summary || summary.length < 8) return null
+
+  const host = promptSourceHost(sourceUrl || source.url)
+  const category = classifyPromptSourceCategory(`${source.name} ${source.category} ${title} ${summary} ${host}`, source.category || '通用提示词源')
+
+  return {
+    type: 'prompt',
+    title,
+    sourceName: source.name,
+    author: firstString(config.sourceRepo),
+    sourceUrl,
+    canonicalUrl: `prompt-site:${source.slug}:${normalizeUrl(sourceUrl) || fingerprint(`${title}:${index}`).slice(0, 12)}`,
+    publishedAt: null,
+    summary,
+    language: source.language || 'multi',
+    region: source.region || 'global',
+    category,
+    tags: promptConfigTags(config, source, [category, host, firstString(config.sourceKind)]),
+    contentSnippet: summary,
+    rawData: {
+      parser: firstString(config.parser, 'generic-prompt-site'),
+      sourceKind: firstString(config.sourceKind, 'prompt-site'),
+      sourceSite: host,
+      sourceRepo: firstString(config.sourceRepo),
+      sourceRepoUrl: firstString(config.sourceRepoUrl),
+      itemIndex: index,
+    },
+  }
+}
+
+async function collectGenericPromptSite(source: any): Promise<RawItem[]> {
+  if (!source.url) return []
+  const config = parseJson<Record<string, any>>(source.config, {})
+  const timeoutMs = Math.max(10000, Math.min(Number(config.timeoutMs || 45000), 90000))
+  const limit = Math.max(1, Math.min(Number(config.limit || 40), 120))
+
+  if (config.rawReadmeUrl) {
+    try {
+      const markdown = await fetchPublicText(String(config.rawReadmeUrl), timeoutMs, 'html')
+      const markdownItems = parsePromptDirectoryMarkdown(source, markdown, { ...config, parser: 'generic-prompt-readme' })
+      if (markdownItems.length > 0) return markdownItems.slice(0, limit)
+    } catch (error) {
+      console.warn(`[prompt] README parser failed for ${source.slug}: ${(error as Error).message}`)
+    }
+  }
+
+  const html = await fetchPublicHtml(source.url, timeoutMs)
+  const $ = cheerio.load(html)
+  $('script,style,noscript,svg').remove()
+  const metaDescription = cleanText(firstString(
+    $('meta[name="description"]').attr('content'),
+    $('meta[property="og:description"]').attr('content'),
+    $('title').text(),
+  ))
+  const selector = firstString(config.itemSelector, 'article, [class*="prompt"], [class*="card"], [class*="item"], main li, main a[href]')
+  const items: RawItem[] = []
+  const seen = new Set<string>()
+
+  $(selector).each((index, element) => {
+    if (items.length >= limit) return false
+    const item = promptItemFromHtmlElement($, element, source, config, metaDescription, index)
+    if (!item) return
+    const key = normalizeUrl(item.sourceUrl) || `${item.title}:${item.summary}`
+    if (seen.has(key)) return
+    seen.add(key)
+    items.push(item)
+  })
+
+  const overview = promptSiteOverviewItem(source, config, metaDescription)
+  if (overview && !seen.has(normalizeUrl(overview.sourceUrl) || overview.title)) items.unshift(overview)
+  return items.slice(0, limit)
+}
+
+async function collectPromptSite(source: any): Promise<RawItem[]> {
+  const config = parseJson<Record<string, any>>(source.config, {})
+  const parser = firstString(config.parser).toLowerCase()
+  if (parser === 'aishort-community-prompts' || source.slug === 'prompt-aishort-community') return collectAiShortPrompts(source)
+  if (parser === 'prompt-directory-markdown') return collectPromptDirectoryMarkdown(source)
+  return collectGenericPromptSite(source)
+}
+
 function firstString(...values: unknown[]) {
   for (const value of values) {
     if (typeof value === 'string' && value.trim()) return value.trim()
@@ -1555,6 +1904,22 @@ function normalizeGithubRepoKey(value?: string | null) {
   return isGithubRepoKey(repo) ? repo : ''
 }
 
+function isPlaceholderGithubRepo(value?: string | null) {
+  const key = normalizeGithubRepoKey(value).toLowerCase()
+  if (!key) return true
+  return new Set([
+    'owner/repo',
+    'org/repo',
+    'user/repo',
+    'username/repo',
+    'example/repo',
+    'your/repo',
+    'your-org/repo',
+    'your-username/repo',
+    'github/repo',
+  ]).has(key)
+}
+
 function githubRepoUrl(repo?: string | null) {
   const key = normalizeGithubRepoKey(repo)
   return key ? `https://github.com/${key}` : ''
@@ -1584,16 +1949,37 @@ function isGithubRepoHomeUrl(value?: string | null) {
   }
 }
 
+function githubConcreteSourcePath(value?: string | null) {
+  if (!value) return ''
+  try {
+    const url = new URL(value)
+    if (!/^github\.com$/i.test(url.hostname)) return ''
+    const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent)
+    const marker = parts.findIndex(part => part === 'blob' || part === 'tree')
+    if (marker < 0 || parts.length <= marker + 2) return ''
+    return parts.slice(marker + 2).join('/')
+  } catch {
+    return ''
+  }
+}
+
+function isConcreteGithubSkillSourceUrl(value?: string | null) {
+  const sourcePath = githubConcreteSourcePath(value).toLowerCase()
+  if (!sourcePath) return false
+  const inSkillDirectory = /(^|\/)(skills?|agent-skills?|claude-skills?)(\/|$)/i.test(sourcePath)
+  const isSkillFile = /(^|\/)skill\.(md|mdx)$/i.test(sourcePath)
+  const isSkillNamedMarkdown = /(^|\/)[^/]*skill[^/]*\.(md|mdx)$/i.test(sourcePath)
+  const isReadmeLike = /(^|\/)(readme|license|contributing|changelog|security|code_of_conduct)\.(md|mdx)$/i.test(sourcePath)
+  if (isReadmeLike && !inSkillDirectory) return false
+  return isSkillFile || inSkillDirectory || isSkillNamedMarkdown
+}
+
 function isPreciseSkillSourceUrl(value?: string | null) {
   if (!value) return false
   try {
     const url = new URL(value)
     if (/^github\.com$/i.test(url.hostname)) {
-      const parts = url.pathname.split('/').filter(Boolean)
-      if (parts.length < 2) return false
-      if (parts.length === 2 && !url.hash) return false
-      if (parts.includes('blob') || parts.includes('tree')) return true
-      return Boolean(url.hash)
+      return isConcreteGithubSkillSourceUrl(value)
     }
     if (/officialskills\.sh$/i.test(url.hostname)) {
       return url.pathname.split('/').filter(Boolean).length >= 3
@@ -1601,7 +1987,7 @@ function isPreciseSkillSourceUrl(value?: string | null) {
     if (/skills\.sh$/i.test(url.hostname)) {
       return url.pathname.split('/').filter(Boolean).length >= 2
     }
-    return true
+    return false
   } catch {
     return false
   }
@@ -1613,6 +1999,9 @@ function hasPreciseSkillSource(item: RawItem) {
   const sourceUrl = firstString(item.sourceUrl)
   if (!isPreciseSkillSourceUrl(sourceUrl)) return false
   const parser = firstString((raw as any).parser, (raw as any).collectorLabels?.parser)
+  const sourcePrecision = firstString((raw as any).sourcePrecision, (raw as any).github?.sourcePrecision)
+  if (sourcePrecision === 'readme-anchor') return false
+  if (parser === 'markdown-list' && sourceUrl.includes('github.com') && !isConcreteGithubSkillSourceUrl(sourceUrl)) return false
   if (parser.includes('source-hint') && isGithubRepoHomeUrl(sourceUrl)) return false
   return true
 }
@@ -1778,7 +2167,7 @@ function githubRepoForSkillItem(item: RawItem) {
   if (item.type !== 'skill') return ''
   const raw = item.rawData || {}
   const nestedItem = (raw as any).item && typeof (raw as any).item === 'object' ? (raw as any).item : {}
-  return normalizeGithubRepoKey(firstString(
+  const repo = normalizeGithubRepoKey(firstString(
     rawOriginalGithubRepo(raw as Record<string, any>),
     githubRepoFromUrl(item.sourceUrl),
     githubRepoFromUrl(item.canonicalUrl),
@@ -1791,6 +2180,7 @@ function githubRepoForSkillItem(item: RawItem) {
     (raw as any).source,
     nestedItem.source,
   ))
+  return isPlaceholderGithubRepo(repo) ? '' : repo
 }
 
 function githubMetricsForSkillItem(item: RawItem) {
@@ -2020,7 +2410,7 @@ function skillsShPublicPages(config: Record<string, any>) {
 
 async function collectSkillsShPublic(source: any): Promise<RawItem[]> {
   const config = parseJson<Record<string, any>>(source.config, {})
-  const pythonPath = path.join(process.cwd(), '.venv-scrapling', 'Scripts', 'python.exe')
+  const pythonPath = scraplingPythonPath()
   const bridge = path.join(process.cwd(), 'scripts', 'scrapling_site_bridge.py')
   const pages = skillsShPublicPages(config)
   const pageLimit = Math.min(Number(config.publicPageLimit || 250), 500)
@@ -2134,12 +2524,14 @@ async function collectSkillsShPublic(source: any): Promise<RawItem[]> {
 
 async function collectSkillsShBrowser(source: any): Promise<RawItem[]> {
   const config = parseJson<Record<string, any>>(source.config, {})
-  const pythonPath = path.join(process.cwd(), '.venv-scrapling', 'Scripts', 'python.exe')
+  const pythonPath = scraplingPythonPath()
   const crawler = path.join(process.cwd(), 'scripts', 'skills_sh_browser_crawler.py')
   const limit = Math.min(Number(config.browserLimit || config.limit || 500), 5000)
   const scrollSteps = Math.min(Number(config.scrollSteps || 40), 2000)
   const delayMs = Math.max(250, Math.min(Number(config.delayMs || 900), 10000))
   const stateFile = String(config.stateFile || '.collector-state/skills-sh-browser.json')
+  const includeSeen = Boolean(config.includeSeen)
+  const stopOnEmittedLimit = includeSeen && config.stopOnEmittedLimit === true
   const maxClicks = Math.max(0, Math.min(Number(config.maxClicks || 24), 200))
   const clickDelayMs = Math.max(100, Math.min(Number(config.clickDelayMs || 600), 5000))
   const discoverPageLimit = Math.max(20, Math.min(Number(config.discoverPageLimit || 500), 2000))
@@ -2154,19 +2546,23 @@ async function collectSkillsShBrowser(source: any): Promise<RawItem[]> {
   const discoveredUrls = config.useDiscoveredPages === false
     ? []
     : browserStateDiscoveredPages(stateFile, Math.min(Number(config.discoveredPageScanLimit || 80), 500))
-  const urls = Array.from(new Set([...configuredUrls, ...discoveredUrls]))
+  const allUrls = Array.from(new Set([...configuredUrls, ...discoveredUrls]))
+  const rotatePages = config.rotatePages !== false
+  const maxPagesPerRun = Math.max(1, Math.min(Number(config.maxPagesPerRun || allUrls.length || 1), allUrls.length || 1))
+  const nextUrlIndex = rotatePages ? readBrowserStateNextUrlIndex(stateFile, allUrls.length) : 0
+  const urls = rotatePages ? rotateArray(allUrls, nextUrlIndex).slice(0, maxPagesPerRun) : allUrls
   const items: RawItem[] = []
   const seen = new Set<string>()
   const failures: string[] = []
 
   console.warn(
-    `[skills.sh browser] start source=${source.slug} pages=${urls.length} limit=${limit} scrollSteps=${scrollSteps} seenBefore=${initialSeenCount} includeSeen=${Boolean(config.includeSeen)} state=${stateFile}`,
+    `[skills.sh browser] start source=${source.slug} pages=${urls.length}/${allUrls.length} nextUrlIndex=${nextUrlIndex} limit=${limit} scrollSteps=${scrollSteps} seenBefore=${initialSeenCount} includeSeen=${includeSeen} stopOnEmittedLimit=${stopOnEmittedLimit} state=${stateFile}`,
   )
 
   for (let urlIndex = 0; urlIndex < urls.length; urlIndex++) {
     const url = urls[urlIndex]
-    if (items.length >= limit) break
-    const remaining = limit - items.length
+    if (stopOnEmittedLimit && items.length >= limit) break
+    const remaining = stopOnEmittedLimit ? limit - items.length : limit
     const seenBeforePage = readBrowserStateSeenCount(stateFile)
     console.warn(`[skills.sh browser] page ${urlIndex + 1}/${urls.length} start url=${url} remaining=${remaining} seenBeforePage=${seenBeforePage}`)
 
@@ -2191,7 +2587,7 @@ async function collectSkillsShBrowser(source: any): Promise<RawItem[]> {
       '--discover-page-limit',
       String(discoverPageLimit),
       ...(config.clickLoadMore === false ? [] : ['--click-load-more']),
-      ...(config.includeSeen ? ['--include-seen'] : []),
+      ...(includeSeen ? ['--include-seen'] : []),
       ...(config.headful ? ['--headful'] : []),
     ], {
       label: `skills.sh browser ${urlIndex + 1}/${urls.length}`,
@@ -2225,7 +2621,9 @@ async function collectSkillsShBrowser(source: any): Promise<RawItem[]> {
     }
 
     const parsedItems = Array.isArray(parsed.items) ? parsed.items : []
-    let accepted = 0
+    let emitted = 0
+    let freshAccepted = 0
+    let replayAccepted = 0
     let skippedDuplicateInRun = 0
     let skippedInvalid = 0
 
@@ -2259,20 +2657,25 @@ async function collectSkillsShBrowser(source: any): Promise<RawItem[]> {
         },
       }
       items.push(normalized)
-      accepted++
-      if (items.length >= limit) break
+      emitted++
+      const wasReplay = Boolean(raw.alreadySeen)
+      if (wasReplay) replayAccepted++
+      else freshAccepted++
+      if (stopOnEmittedLimit && items.length >= limit) break
     }
 
     const meta = parsed.meta || {}
     const totalParsed = Number(meta.totalParsed ?? parsedItems.length)
+    const emittedCount = Number(meta.emittedCount ?? parsedItems.length)
     const freshCount = Number(meta.freshCount ?? parsedItems.length)
+    const replayCount = Number(meta.replayCount ?? Math.max(0, emittedCount - freshCount))
     const seenAfterPage = Number(meta.seenCount ?? readBrowserStateSeenCount(stateFile))
     console.warn(
-      `[skills.sh browser] page ${urlIndex + 1}/${urls.length} done url=${url} parsed=${totalParsed} fresh=${freshCount} accepted=${accepted} skippedRunDuplicate=${skippedDuplicateInRun} skippedInvalid=${skippedInvalid} seenAfterPage=${seenAfterPage} discovered=${meta.discoveredPageCount ?? 0} savedThisRun=${items.length}`,
+      `[skills.sh browser] page ${urlIndex + 1}/${urls.length} done url=${url} parsed=${totalParsed} emitted=${emittedCount} fresh=${freshCount} replay=${replayCount} acceptedFresh=${freshAccepted} acceptedReplay=${replayAccepted} skippedRunDuplicate=${skippedDuplicateInRun} skippedInvalid=${skippedInvalid} seenAfterPage=${seenAfterPage} discovered=${meta.discoveredPageCount ?? 0} savedThisRun=${items.length}`,
     )
-    if (freshCount === 0 || accepted === 0) {
+    if (freshCount === 0 || emitted === 0) {
       console.warn(
-        `[skills.sh browser] page ${urlIndex + 1}/${urls.length} no new accepted items; most links were already in ${stateFile}. To re-import old items, enable includeSeen or reset the checkpoint.`,
+        `[skills.sh browser] page ${urlIndex + 1}/${urls.length} no new unique skills; continuing to later discovered pages. includeSeen only refreshes existing rows and does not grow checkpoint.`,
       )
     }
   }
@@ -2280,8 +2683,43 @@ async function collectSkillsShBrowser(source: any): Promise<RawItem[]> {
   if (items.length === 0 && failures.length > 0) {
     throw new Error(`skills.sh browser crawl failed: ${failures.slice(0, 3).join(' | ')}`)
   }
+  if (rotatePages && allUrls.length > 0) {
+    await writeBrowserStateNextUrlIndex(stateFile, (nextUrlIndex + urls.length) % allUrls.length)
+  }
   console.warn(`[skills.sh browser] finished accepted=${items.length} failures=${failures.length} seenBefore=${initialSeenCount} seenAfter=${readBrowserStateSeenCount(stateFile)}`)
   return items
+}
+
+function rotateArray<T>(items: T[], startIndex: number) {
+  if (!items.length) return items
+  const safeIndex = ((startIndex % items.length) + items.length) % items.length
+  return [...items.slice(safeIndex), ...items.slice(0, safeIndex)]
+}
+
+function readBrowserStateNextUrlIndex(stateFile: string, total: number) {
+  if (total <= 0) return 0
+  try {
+    const filePath = path.isAbsolute(stateFile) ? stateFile : path.join(process.cwd(), stateFile)
+    if (!existsSync(filePath)) return 0
+    const state = parseJson<Record<string, any>>(readFileSync(filePath, 'utf8'), {})
+    const index = Number(state.nextUrlIndex || 0)
+    return Number.isFinite(index) ? ((index % total) + total) % total : 0
+  } catch {
+    return 0
+  }
+}
+
+async function writeBrowserStateNextUrlIndex(stateFile: string, nextUrlIndex: number) {
+  try {
+    const filePath = path.isAbsolute(stateFile) ? stateFile : path.join(process.cwd(), stateFile)
+    const state = parseJson<Record<string, any>>(existsSync(filePath) ? readFileSync(filePath, 'utf8') : '', {})
+    state.nextUrlIndex = nextUrlIndex
+    state.nextUrlIndexUpdatedAt = new Date().toISOString()
+    await fs.mkdir(path.dirname(filePath), { recursive: true })
+    await fs.writeFile(filePath, JSON.stringify(state, null, 2), 'utf8')
+  } catch {
+    return
+  }
 }
 
 function readBrowserStateSeenCount(stateFile: string) {
@@ -2311,7 +2749,7 @@ function browserStateDiscoveredPages(stateFile: string, limit: number) {
 }
 
 async function enrichSkillsShDetails(items: RawItem[], source: any, limit: number): Promise<RawItem[]> {
-  const pythonPath = path.join(process.cwd(), '.venv-scrapling', 'Scripts', 'python.exe')
+  const pythonPath = scraplingPythonPath()
   const bridge = path.join(process.cwd(), 'scripts', 'scrapling_site_bridge.py')
   let enriched = 0
 
@@ -2436,7 +2874,10 @@ async function fetchSkillsShSearch(query: string, limit: number, endpoint = 'htt
 
 async function collectSkillsShSearch(source: any): Promise<RawItem[]> {
   const config = parseJson<Record<string, any>>(source.config, {})
-  const queries = Array.isArray(config.queries) ? config.queries.map(String).filter(Boolean) : []
+  const queries = compactStringList([
+    ...(Array.isArray(config.queries) ? config.queries : []),
+    ...deepSeekSkillQueries('skillsShQueries'),
+  ], 360)
   const stateFile = String(config.stateFile || '.collector-state/skills-sh-search-index.json')
   const statePath = path.isAbsolute(stateFile) ? stateFile : path.join(process.cwd(), stateFile)
   const state = parseJson<Record<string, any>>(existsSync(statePath) ? readFileSync(statePath, 'utf8') : '', {})
@@ -2652,6 +3093,7 @@ function isLikelySkillName(name: string) {
   if (name.startsWith('@')) return false
   if (/^\d{4}-\d{2}-\d{2}$/.test(name)) return false
   if (/^\d+(\.\d+)*$/.test(name)) return false
+  if (/^[a-z]+:$/i.test(name)) return false
   if (/^https?:\/\//i.test(name)) return false
   if (/[\\/][^\\/]+\.(toml|json|ya?ml|md|txt|js|ts|tsx|jsx|py|sh)$/i.test(name)) return false
   if (/^\.?[a-z0-9_-]+\.(toml|json|ya?ml|md|txt|js|ts|tsx|jsx|py|sh)$/i.test(name)) return false
@@ -2681,6 +3123,19 @@ function isLikelySkillName(name: string) {
     'marketing',
     'document ops',
     'it ops',
+    'discord',
+    'issues',
+    'release announcements',
+    'detailed docs',
+    'smart recommendations',
+    'code generation',
+    'pre-delivery checks',
+    'design system generated',
+    'you ask',
+    'state management',
+    'story behind this skill',
+    'main',
+    'dev',
   ].includes(value)) return false
   if (/^(view all|learn more|read more|get started|copy|download|sign in|sign up)\b/i.test(name)) return false
   if (/ command reference$/i.test(name)) return false
@@ -2989,6 +3444,25 @@ async function fetchRawText(url: string, timeoutMs = 20000) {
   }
 }
 
+async function fetchGithubFileText(repo: string, branch: string, filePath: string, timeoutMs = 20000) {
+  const apiUrl = new URL(`https://api.github.com/repos/${repo}/contents/${filePath.split('/').map(encodeURIComponent).join('/')}`)
+  if (branch && branch !== 'HEAD') apiUrl.searchParams.set('ref', branch)
+
+  try {
+    const data = await fetchGithubJson(apiUrl.toString(), 1)
+    const content = typeof data?.content === 'string' ? data.content : ''
+    const encoding = typeof data?.encoding === 'string' ? data.encoding.toLowerCase() : ''
+    if (content && encoding === 'base64') {
+      return Buffer.from(content.replace(/\s+/g, ''), 'base64').toString('utf8')
+    }
+    if (content) return content
+  } catch (error) {
+    console.warn(`[github-core] contents fallback ${repo}/${filePath}: ${(error as Error).message}`)
+  }
+
+  return fetchRawText(githubRawUrl(repo, branch, filePath), timeoutMs)
+}
+
 function githubRawUrl(repo: string, branch: string, filePath: string) {
   return githubRawFileUrl(repo, branch, filePath)
 }
@@ -3133,6 +3607,24 @@ function githubMetadataFromRepoResult(repo: any) {
     archived: Boolean(repo.archived),
     disabled: Boolean(repo.disabled),
   }
+}
+
+const githubRepoInfoCache = new Map<string, Promise<any | null>>()
+
+async function fetchGithubRepoInfo(repo: string, fallback?: any) {
+  const key = normalizeGithubRepoKey(repo)
+  if (!key) return fallback || null
+
+  const cacheKey = key.toLowerCase()
+  if (!githubRepoInfoCache.has(cacheKey)) {
+    githubRepoInfoCache.set(cacheKey, fetchGithubJson(`https://api.github.com/repos/${key}`)
+      .catch(error => {
+        console.warn(`[github-core] repo metadata fallback ${key}: ${(error as Error).message}`)
+        return fallback || null
+      }))
+  }
+
+  return (await githubRepoInfoCache.get(cacheKey)) || fallback || null
 }
 
 async function discoverSkillRepos(searchQueries: string[], repoSearchLimit: number) {
@@ -3331,12 +3823,12 @@ async function collectGithubSkillRepo(source: any): Promise<RawItem[]> {
   for (const repo of repos) {
     if (allItems.length >= maxTotal) break
     try {
-      const repoInfo = await fetchGithubJson(`https://api.github.com/repos/${repo}`)
+      const repoInfo = await fetchGithubRepoInfo(repo)
+      if (!repoInfo) throw new Error(`GitHub repo metadata unavailable: ${repo}`)
       const branch = repoInfo.default_branch || 'main'
       const repoItems: RawItem[] = []
 
-      const readmeUrl = githubRawUrl(repo, branch, 'README.md')
-      const readme = await fetchRawText(readmeUrl).catch(() => '')
+      const readme = await fetchGithubFileText(repo, branch, 'README.md').catch(() => '')
       if (readme) {
         repoItems.push(...parseMarkdownSkillCandidates(readme, repo, branch, source, limitPerRepo, repoInfo))
       }
@@ -3354,7 +3846,7 @@ async function collectGithubSkillRepo(source: any): Promise<RawItem[]> {
 
       for (const file of skillFiles) {
         if (repoItems.length >= limitPerRepo || allItems.length + repoItems.length >= maxTotal) break
-        const markdown = await fetchRawText(githubRawUrl(repo, branch, file.path)).catch(() => '')
+        const markdown = await fetchGithubFileText(repo, branch, file.path).catch(() => '')
         if (!markdown) continue
         const parsed = rawItemFromSkillMarkdown(repo, branch, file.path, markdown, source, repoInfo)
         if (parsed) repoItems.push(parsed)
@@ -3420,10 +3912,7 @@ async function collectSkillsShGithubSources(source: any): Promise<RawItem[]> {
     try {
       const repoItems: RawItem[] = []
       const repoHints = (hintsByRepo.get(repo.toLowerCase()) || []).slice(0, hintLimitPerRepo)
-      const repoInfo = await fetchGithubJson(`https://api.github.com/repos/${repo}`).catch(error => {
-        console.warn(`[skills.sh-github] ${repo} GitHub API metadata fallback: ${(error as Error).message}`)
-        return null
-      })
+      const repoInfo = await fetchGithubRepoInfo(repo)
       const branch = repoInfo?.default_branch || 'HEAD'
 
       const tree = await fetchGithubJson(`https://api.github.com/repos/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`).catch(() => null)
@@ -3437,7 +3926,7 @@ async function collectSkillsShGithubSources(source: any): Promise<RawItem[]> {
 
       const canFetchReadme = Boolean(repoInfo) || config.readmeFallbackWithoutApi === true
       if (canFetchReadme && repoItems.length < limitPerRepo && allItems.length + repoItems.length < maxTotal) {
-        const readme = await fetchRawText(githubRawUrl(repo, branch, 'README.md')).catch(() => '')
+        const readme = await fetchGithubFileText(repo, branch, 'README.md').catch(() => '')
         if (readme) {
           repoItems.push(...parseMarkdownSkillCandidates(readme, repo, branch, source, limitPerRepo - repoItems.length, repoInfo))
         }
@@ -3454,7 +3943,7 @@ async function collectSkillsShGithubSources(source: any): Promise<RawItem[]> {
 
       for (const file of skillFiles) {
         if (repoItems.length >= limitPerRepo || allItems.length + repoItems.length >= maxTotal) break
-        const markdown = await fetchRawText(githubRawUrl(repo, branch, file.path)).catch(() => '')
+        const markdown = await fetchGithubFileText(repo, branch, file.path).catch(() => '')
         if (!markdown) continue
         const parsed = rawItemFromSkillMarkdown(repo, branch, file.path, markdown, source, repoInfo)
         if (parsed) repoItems.push(parsed)
@@ -3560,9 +4049,10 @@ async function collectGithubSkillIndex(source: any): Promise<RawItem[]> {
         if (seen.has(key) || seenFiles.has(key)) continue
         seen.add(key)
         seenFiles.add(key)
-        const branch = result.repository?.default_branch || 'HEAD'
+        const repoInfo = await fetchGithubRepoInfo(repo, result.repository)
+        const branch = repoInfo?.default_branch || result.repository?.default_branch || 'HEAD'
         rawFetches++
-        const markdown = await fetchRawText(githubRawUrl(repo, branch, filePath), rawFetchTimeoutMs).catch(() => '')
+        const markdown = await fetchGithubFileText(repo, branch, filePath, rawFetchTimeoutMs).catch(() => '')
         if (!markdown) {
           consecutiveEmptyRaw++
           continue
@@ -3574,7 +4064,7 @@ async function collectGithubSkillIndex(source: any): Promise<RawItem[]> {
             continue
           }
           consecutiveEmptyRaw = 0
-          const github = githubMetadataForSkill(repo, result.repository, branch, filePath)
+          const github = githubMetadataForSkill(repo, repoInfo || result.repository, branch, filePath)
           parsed.rawData = {
             ...(parsed.rawData || {}),
             githubUrl: parsed.sourceUrl,
@@ -3782,8 +4272,9 @@ async function saveExternalSkill(item: RawItem, source: any) {
   const tags = tagsFor(item)
   const raw = item.rawData || {}
   const externalId = firstString((raw as any).externalId, (raw as any).id, (raw as any).item?.id, item.canonicalUrl, item.sourceUrl)
-  const categoryZh = categoryZhFor(item, tags)
-  const tagsZh = translateTagsZh(tags)
+  const classification = classifySkillForRawItem(item, tags, source)
+  const categoryZh = classification.categoryZh
+  const tagsZh = classification.tagsZh
   const fp = fingerprint(`external-skill:${source.slug}:${externalId || normalizeTitle(item.title)}`)
   const sourceUrl = normalizeUrl(item.sourceUrl) || item.sourceUrl
   const score = scoreItem(item, source.priority).score
@@ -3820,6 +4311,16 @@ async function saveExternalSkill(item: RawItem, source: any) {
     aggregateSource: aggregateReason ? true : undefined,
     aggregateSourceReason: aggregateReason || undefined,
     originalSourceRequired: aggregateReason ? true : undefined,
+    skillClassifier: {
+      version: 1,
+      categoryZh: classification.categoryZh,
+      tagsZh: classification.tagsZh,
+      confidence: classification.confidence,
+      matchedKeywords: classification.matchedKeywords,
+      scoreDetail: classification.scoreDetail,
+      capabilityHints: classification.capabilityHints,
+      classifiedAt: new Date().toISOString(),
+    },
   }
   const existingByExternalId = externalId
     ? await prisma.externalSkill.findFirst({ where: { sourceSlug: source.slug, externalId } })
@@ -4275,7 +4776,7 @@ async function collectSource(source: any) {
     else if (source.type === SOURCE_TYPES.localSkills || source.type.includes('本地技能')) items = await collectLocalSkills(source)
     else if (source.type === SOURCE_TYPES.githubSkillRepo) items = await collectGithubSkillRepo(source)
     else if (source.type === SOURCE_TYPES.manualSkills || source.type.includes('人工录入')) items = await collectManualItems(source)
-    else if (source.type === SOURCE_TYPES.promptSite) items = await collectAiShortPrompts(source)
+    else if (source.type === SOURCE_TYPES.promptSite) items = await collectPromptSite(source)
 
     let saved = 0
     for (const item of items) {
@@ -4453,13 +4954,15 @@ function sleep(ms: number) {
 }
 
 let daemonStopRequested = false
+let activeDaemonName = 'collector-daemon'
 
 function requestDaemonStop(signal: string) {
   daemonStopRequested = true
-  console.warn(`[skills.sh-daemon] ${signal} received; stopping after current source.`)
+  console.warn(`[${activeDaemonName}] ${signal} received; stopping after current source.`)
 }
 
-function setupDaemonSignals() {
+function setupDaemonSignals(name = 'collector-daemon') {
+  activeDaemonName = name
   process.once('SIGINT', () => requestDaemonStop('SIGINT'))
   process.once('SIGTERM', () => requestDaemonStop('SIGTERM'))
 }
@@ -4509,7 +5012,7 @@ export async function runSkillIndexBatch() {
 }
 
 export async function runSkillsShDaemon() {
-  setupDaemonSignals()
+  setupDaemonSignals('skills.sh-daemon')
   await seedSources()
   const maxCycles = Math.max(0, Math.min(Number(cliArg('--max-cycles', '0')), 100000))
   const sourceDelayMs = Math.max(0, Math.min(Number(cliArg('--source-delay-ms', '3000')), 300000))
@@ -4656,6 +5159,107 @@ export async function runPromptBatch() {
   }
 }
 
+export async function runPromptLibraryDaemon() {
+  setupDaemonSignals('prompt-daemon')
+  await seedSources()
+  const maxCycles = Math.max(0, Math.min(Number(cliArg('--max-cycles', '0')), 100000))
+  const sourceDelayMs = Math.max(0, Math.min(Number(cliArg('--source-delay-ms', '3000')), 300000))
+  const cycleDelayMs = Math.max(10000, Math.min(Number(cliArg('--cycle-delay-ms', '180000')), 3600000))
+  const sourceSlugs = (cliArg('--sources', '') || '')
+    .split(',')
+    .map(item => item.trim())
+    .filter(Boolean)
+  const results: Array<{ cycle: number; source: string; saved: number; error?: string }> = []
+  let cycle = 0
+
+  console.log(JSON.stringify({
+    daemon: 'prompt-library',
+    event: 'start',
+    sources: sourceSlugs.length ? sourceSlugs : 'all-enabled-prompt-sources',
+    maxCycles: maxCycles || 'infinite',
+    sourceDelayMs,
+    cycleDelayMs,
+    startedAt: new Date().toISOString(),
+  }))
+
+  while (!daemonStopRequested && (maxCycles === 0 || cycle < maxCycles)) {
+    cycle++
+    const sources = await prisma.collectionSource.findMany({
+      where: {
+        enabled: true,
+        target: 'prompt',
+        ...(sourceSlugs.length ? { slug: { in: sourceSlugs } } : {}),
+      },
+      orderBy: [{ priority: 'desc' }, { updatedAt: 'desc' }],
+    })
+
+    console.log(JSON.stringify({
+      daemon: 'prompt-library',
+      event: 'cycle-start',
+      cycle,
+      sources: sources.map(source => source.slug),
+      startedAt: new Date().toISOString(),
+    }))
+
+    for (const source of sources) {
+      if (daemonStopRequested) break
+      const startedAt = Date.now()
+      console.log(JSON.stringify({
+        daemon: 'prompt-library',
+        event: 'source-start',
+        cycle,
+        source: source.slug,
+        startedAt: new Date().toISOString(),
+      }))
+
+      try {
+        const result = await collectSource(source)
+        results.push({ cycle, ...result })
+        console.log(JSON.stringify({
+          daemon: 'prompt-library',
+          event: 'source-finished',
+          cycle,
+          elapsedSeconds: elapsedSeconds(startedAt),
+          ...result,
+        }))
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'prompt source failed'
+        results.push({ cycle, source: source.slug, saved: 0, error: message })
+        console.warn(JSON.stringify({
+          daemon: 'prompt-library',
+          event: 'source-failed',
+          cycle,
+          source: source.slug,
+          elapsedSeconds: elapsedSeconds(startedAt),
+          error: message,
+        }))
+      }
+
+      if (sourceDelayMs > 0 && !daemonStopRequested) await daemonSleep(sourceDelayMs)
+    }
+
+    console.log(JSON.stringify({
+      daemon: 'prompt-library',
+      event: 'cycle-finished',
+      cycle,
+      saved: results.filter(item => item.cycle === cycle).reduce((sum, item) => sum + item.saved, 0),
+      finishedAt: new Date().toISOString(),
+      nextCycleDelayMs: maxCycles > 0 && cycle >= maxCycles ? 0 : cycleDelayMs,
+    }))
+
+    if (maxCycles > 0 && cycle >= maxCycles) break
+    if (!daemonStopRequested) await daemonSleep(cycleDelayMs)
+  }
+
+  return {
+    cycles: cycle,
+    sources: sourceSlugs.length ? sourceSlugs : ['all-enabled-prompt-sources'],
+    stopped: daemonStopRequested,
+    candidates: results.reduce((sum, item) => sum + item.saved, 0),
+    results,
+  }
+}
+
 async function main() {
   const command = process.argv[2] || 'all'
   if (command === 'seed-sources') {
@@ -4684,6 +5288,12 @@ async function main() {
 
   if (command === 'batch-prompts') {
     const result = await runPromptBatch()
+    console.log(JSON.stringify({ ok: true, ...result }, null, 2))
+    return
+  }
+
+  if (command === 'prompt-daemon') {
+    const result = await runPromptLibraryDaemon()
     console.log(JSON.stringify({ ok: true, ...result }, null, 2))
     return
   }

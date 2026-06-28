@@ -309,11 +309,19 @@ def main():
 
     deduped = unique_items(items)
     fresh_items = []
+    fresh_count = 0
+    replay_count = 0
     for item in deduped:
         key = skill_key(item)
         item["key"] = key
-        if args.include_seen or key not in seen:
+        already_seen = bool(key and key in seen)
+        if args.include_seen or not already_seen:
+            item["alreadySeen"] = already_seen
             fresh_items.append(item)
+            if already_seen:
+                replay_count += 1
+            else:
+                fresh_count += 1
         if key:
             seen.add(key)
         if len(fresh_items) >= args.limit:
@@ -323,7 +331,9 @@ def main():
         {
             "finishedAt": datetime.now(timezone.utc).isoformat(),
             "totalParsed": len(deduped),
-            "freshCount": len(fresh_items),
+            "emittedCount": len(fresh_items),
+            "freshCount": fresh_count,
+            "replayCount": replay_count,
             "seenCount": len(seen),
             "discoveredPageCount": len(discovered_pages),
             "discoveredPages": discovered_pages[:80],
@@ -354,7 +364,9 @@ def main():
     pages[args.url] = {
         "lastRunAt": telemetry["finishedAt"],
         "totalParsed": telemetry["totalParsed"],
+        "emittedCount": telemetry["emittedCount"],
         "freshCount": telemetry["freshCount"],
+        "replayCount": telemetry["replayCount"],
         "seenCount": telemetry["seenCount"],
         "discoveredPageCount": telemetry["discoveredPageCount"],
         "totalSkills": telemetry.get("totalSkills"),

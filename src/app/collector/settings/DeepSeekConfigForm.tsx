@@ -1,36 +1,30 @@
 'use client'
 
 import { useState } from 'react'
-import { AlertTriangle, CheckCircle2, ExternalLink, Github, Loader2, Save, Trash2, Zap } from 'lucide-react'
+import { AlertTriangle, BrainCircuit, CheckCircle2, Database, Loader2, RefreshCw, Save, Sparkles, Trash2, Zap } from 'lucide-react'
 
-type GithubConfigStatus = {
+type DeepSeekConfigStatus = {
   configured: boolean
   source: string | null
   maskedToken: string | null
   envFile: string
   envFileExists: boolean
   updatedAt: string | null
-  tokenPrefix: string | null
+  apiUrl: string
+  model: string
 }
 
-type GithubRateLimitStatus = {
+type DeepSeekCheckStatus = {
   ok: boolean
   status: number
   message: string
-  login?: string | null
-  rate?: {
-    coreLimit?: number
-    coreRemaining?: number
-    coreResetAt?: string | null
-    searchLimit?: number
-    searchRemaining?: number
-    searchResetAt?: string | null
-  }
+  model?: string
+  latencyMs?: number
 }
 
 type Props = {
-  initialConfig: GithubConfigStatus
-  initialCheck: GithubRateLimitStatus
+  initialConfig: DeepSeekConfigStatus
+  initialCheck: DeepSeekCheckStatus
 }
 
 function formatDate(value?: string | null) {
@@ -45,42 +39,34 @@ function formatDate(value?: string | null) {
   })
 }
 
-function rateLabel(value?: number) {
-  return typeof value === 'number' ? value.toLocaleString('zh-CN') : '-'
-}
-
-function usedLabel(remaining?: number, limit?: number) {
-  if (typeof remaining !== 'number' || typeof limit !== 'number') return '-'
-  return Math.max(0, limit - remaining).toLocaleString('zh-CN')
-}
-
-export default function GithubConfigForm({ initialConfig, initialCheck }: Props) {
+export default function DeepSeekConfigForm({ initialConfig, initialCheck }: Props) {
   const [token, setToken] = useState('')
+  const [apiUrl, setApiUrl] = useState(initialConfig.apiUrl || 'https://api.deepseek.com')
+  const [model, setModel] = useState(initialConfig.model || 'deepseek-v4-flash')
   const [config, setConfig] = useState(initialConfig)
-  const [check, setCheck] = useState<GithubRateLimitStatus | null>(initialCheck)
+  const [check, setCheck] = useState<DeepSeekCheckStatus | null>(initialCheck)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
   const [removing, setRemoving] = useState(false)
 
-  async function saveToken() {
+  async function saveConfig() {
     setSaving(true)
     setMessage('')
     setError('')
-
     try {
-      const response = await fetch('/api/collector/github-config', {
+      const response = await fetch('/api/collector/deepseek-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token }),
+        body: JSON.stringify({ token, apiUrl, model }),
       })
       const data = await response.json()
       if (!response.ok || data?.ok === false) throw new Error(data?.error || '保存失败')
       setConfig(data.config)
       setCheck(data.check)
       setToken('')
-      setMessage('GitHub Token 已保存，常驻采集器下一轮会自动读取。')
+      setMessage('AI API 配置已保存，知识库和增长计划任务下一轮会自动读取。')
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : '保存失败')
     } finally {
@@ -88,20 +74,17 @@ export default function GithubConfigForm({ initialConfig, initialCheck }: Props)
     }
   }
 
-  async function testToken() {
+  async function testConfig() {
     setTesting(true)
     setMessage('')
     setError('')
-
     try {
-      const response = await fetch('/api/collector/github-config', { method: 'PATCH' })
+      const response = await fetch('/api/collector/deepseek-config', { method: 'PATCH' })
       const data = await response.json()
       setConfig(data.config)
       setCheck(data.check)
-      if (!response.ok || data?.ok === false) {
-        throw new Error(data?.check?.message || data?.error || '检测失败')
-      }
-      setMessage(data?.check?.message || 'GitHub Token 可用。')
+      if (!response.ok || data?.ok === false) throw new Error(data?.check?.message || data?.error || '检测失败')
+      setMessage(data?.check?.message || 'AI API 可用。')
     } catch (testError) {
       setError(testError instanceof Error ? testError.message : '检测失败')
     } finally {
@@ -109,19 +92,18 @@ export default function GithubConfigForm({ initialConfig, initialCheck }: Props)
     }
   }
 
-  async function removeToken() {
-    if (!window.confirm('确认删除本地 .env.local 里的 GITHUB_TOKEN 吗？')) return
+  async function removeConfig() {
+    if (!window.confirm('确认删除本地 .env.local 里的 AI API 配置吗？')) return
     setRemoving(true)
     setMessage('')
     setError('')
-
     try {
-      const response = await fetch('/api/collector/github-config', { method: 'DELETE' })
+      const response = await fetch('/api/collector/deepseek-config', { method: 'DELETE' })
       const data = await response.json()
       if (!response.ok || data?.ok === false) throw new Error(data?.error || '删除失败')
       setConfig(data.config)
       setCheck(null)
-      setMessage('本地 GitHub Token 已删除。')
+      setMessage('本地 AI API 配置已删除。')
     } catch (removeError) {
       setError(removeError instanceof Error ? removeError.message : '删除失败')
     } finally {
@@ -131,37 +113,55 @@ export default function GithubConfigForm({ initialConfig, initialCheck }: Props)
 
   const busy = saving || testing || removing
   const configured = config.configured
-  const coreLimit = check?.rate?.coreLimit
-  const coreRemaining = check?.rate?.coreRemaining
-  const searchLimit = check?.rate?.searchLimit
-  const searchRemaining = check?.rate?.searchRemaining
 
   return (
     <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
       <section className="rounded-md border border-zinc-800 bg-[#10161d]">
         <div className="border-b border-zinc-800 px-4 py-3">
           <div className="flex items-center gap-2 text-zinc-100">
-            <Github className="h-4 w-4 text-cyan-300" />
-            <h2 className="font-medium">GitHub Token 设置</h2>
+            <BrainCircuit className="h-4 w-4 text-cyan-300" />
+            <h2 className="font-medium">AI API 调度配置</h2>
           </div>
           <p className="mt-1 text-xs leading-5 text-zinc-500">
-            Search 额度用于发现仓库和 SKILL.md，Core 额度用于补全仓库详情、Tree、文件内容、Star 和 Fork。保存后采集任务自动读取，不需要手动启动。
+            AI API 负责理解知识库、能力画像和采集状态，输出下一轮 Skill、AI 资讯、提示词增长计划。保存后后台任务自动读取。
           </p>
         </div>
 
         <div className="space-y-4 p-4">
-          <div className="grid gap-3 md:grid-cols-3">
+          <div className="grid gap-3 md:grid-cols-4">
             <StatusTile label="配置状态" value={configured ? '已配置' : '未配置'} tone={configured ? 'emerald' : 'amber'} />
             <StatusTile label="来源" value={config.source || '-'} />
             <StatusTile label="Token" value={config.maskedToken || '-'} />
+            <StatusTile label="更新时间" value={formatDate(config.updatedAt)} />
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-[1fr_0.8fr]">
+            <label className="block">
+              <span className="text-sm font-medium text-zinc-200">API 地址</span>
+              <input
+                value={apiUrl}
+                onChange={event => setApiUrl(event.target.value)}
+                placeholder="https://api.deepseek.com"
+                className="mt-2 h-11 w-full rounded-md border border-zinc-700 bg-[#0b0f14] px-3 font-mono text-sm text-zinc-100 outline-none transition-colors placeholder:text-zinc-600 focus:border-cyan-400"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-zinc-200">模型</span>
+              <input
+                value={model}
+                onChange={event => setModel(event.target.value)}
+                placeholder="deepseek-v4-flash"
+                className="mt-2 h-11 w-full rounded-md border border-zinc-700 bg-[#0b0f14] px-3 font-mono text-sm text-zinc-100 outline-none transition-colors placeholder:text-zinc-600 focus:border-cyan-400"
+              />
+            </label>
           </div>
 
           <label className="block">
-            <span className="text-sm font-medium text-zinc-200">Personal Access Token</span>
+            <span className="text-sm font-medium text-zinc-200">API Key</span>
             <input
               value={token}
               onChange={event => setToken(event.target.value)}
-              placeholder="github_pat_... 或 ghp_..."
+              placeholder="sk-... 或控制台生成的 Key"
               type="password"
               autoComplete="off"
               className="mt-2 h-11 w-full rounded-md border border-zinc-700 bg-[#0b0f14] px-3 font-mono text-sm text-zinc-100 outline-none transition-colors placeholder:text-zinc-600 focus:border-cyan-400"
@@ -171,8 +171,8 @@ export default function GithubConfigForm({ initialConfig, initialCheck }: Props)
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={saveToken}
-              disabled={busy || token.trim().length === 0}
+              onClick={saveConfig}
+              disabled={busy || (!token.trim() && !apiUrl.trim() && !model.trim())}
               className="inline-flex h-9 items-center gap-2 rounded-md border border-cyan-500/50 bg-cyan-400/10 px-3 text-sm font-medium text-cyan-100 hover:border-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -180,16 +180,16 @@ export default function GithubConfigForm({ initialConfig, initialCheck }: Props)
             </button>
             <button
               type="button"
-              onClick={testToken}
+              onClick={testConfig}
               disabled={busy || !configured}
               className="inline-flex h-9 items-center gap-2 rounded-md border border-zinc-700 px-3 text-sm font-medium text-zinc-200 hover:border-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
-              刷新额度
+              检测连接
             </button>
             <button
               type="button"
-              onClick={removeToken}
+              onClick={removeConfig}
               disabled={busy || !config.envFileExists}
               className="inline-flex h-9 items-center gap-2 rounded-md border border-red-500/40 px-3 text-sm font-medium text-red-200 hover:border-red-300 disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -205,16 +205,9 @@ export default function GithubConfigForm({ initialConfig, initialCheck }: Props)
             </div>
           )}
 
-          <div className="rounded-md border border-zinc-800 bg-zinc-950/50 p-3 text-xs leading-5 text-zinc-400">
-            <div>推荐权限：Fine-grained Token 使用 <span className="text-zinc-200">Contents: Read-only</span> 和 <span className="text-zinc-200">Metadata: Read-only</span>；Classic Token 使用 <span className="text-zinc-200">public_repo</span>。</div>
-            <div className="mt-2 flex flex-wrap gap-3">
-              <a className="inline-flex items-center gap-1 text-cyan-300 hover:text-cyan-100" href="https://github.com/settings/tokens" target="_blank" rel="noreferrer">
-                管理 Token <ExternalLink className="h-3 w-3" />
-              </a>
-              <a className="inline-flex items-center gap-1 text-cyan-300 hover:text-cyan-100" href="https://github.com/settings/tokens/new" target="_blank" rel="noreferrer">
-                创建 Classic Token <ExternalLink className="h-3 w-3" />
-              </a>
-            </div>
+          <div className={`rounded-md border px-3 py-3 text-sm ${check?.ok ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-200' : 'border-amber-400/30 bg-amber-400/10 text-amber-200'}`}>
+            {check?.message || '保存 API Key 后，这里会显示连接检测结果。'}
+            {check?.latencyMs ? <span className="ml-2 text-xs opacity-80">耗时 {check.latencyMs}ms</span> : null}
           </div>
         </div>
       </section>
@@ -222,45 +215,33 @@ export default function GithubConfigForm({ initialConfig, initialCheck }: Props)
       <section className="rounded-md border border-zinc-800 bg-[#10161d]">
         <div className="border-b border-zinc-800 px-4 py-3">
           <div className="flex items-center gap-2 text-zinc-100">
-            <Zap className="h-4 w-4 text-cyan-300" />
-            <h2 className="font-medium">额度状态与自动采集</h2>
+            <Sparkles className="h-4 w-4 text-cyan-300" />
+            <h2 className="font-medium">自动增强链路</h2>
           </div>
           <p className="mt-1 text-xs leading-5 text-zinc-500">
-            GitHub 官方 Search 额度不能无限提高；系统通过 Token、批次轮转、断点续跑和更精确查询来提高有效覆盖。
+            这些步骤由后台采集器和调度任务自动执行；页面只负责配置、检测和展示状态。
           </p>
         </div>
 
-        <div className="space-y-4 p-4">
-          <div className="grid gap-3 md:grid-cols-2">
-            <StatusTile label="GithubCore 剩余" value={`${rateLabel(coreRemaining)} / ${rateLabel(coreLimit)}`} tone={check?.ok ? 'emerald' : 'amber'} />
-            <StatusTile label="GithubSearch 剩余" value={`${rateLabel(searchRemaining)} / ${rateLabel(searchLimit)}`} tone={check?.ok ? 'emerald' : 'amber'} />
-            <StatusTile label="GithubCore 已用" value={usedLabel(coreRemaining, coreLimit)} />
-            <StatusTile label="GithubSearch 已用" value={usedLabel(searchRemaining, searchLimit)} />
-            <StatusTile label="Core 重置" value={formatDate(check?.rate?.coreResetAt)} />
-            <StatusTile label="Search 重置" value={formatDate(check?.rate?.searchResetAt)} />
-          </div>
-
-          <div className={`rounded-md border px-3 py-3 text-sm ${check?.ok ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-200' : 'border-amber-400/30 bg-amber-400/10 text-amber-200'}`}>
-            {check?.message || '保存 Token 后这里会显示 GitHub API 检测结果。'}
-          </div>
-
-          <div className="grid gap-3">
-            <AutoFlow
-              title="GitHub 全量 Skill 采集"
-              status={configured ? '自动读取 Token' : '等待 Token'}
-              note="常驻任务会连续跑多轮：Search 发现 SKILL.md 与源仓库，Core 补全仓库详情、Tree、文件内容和 Star。"
-            />
-            <AutoFlow
-              title="skills.sh GitHub 源扩采"
-              status="常驻同步"
-              note="从 skills.sh 已采线索反查原始 GitHub 仓库和 SKILL.md 文件，结果写入 external_skills。"
-            />
-            <AutoFlow
-              title="Star / Fork 补全"
-              status={configured ? '自动补齐' : '等待 Token'}
-              note="数据优化任务会读取 GitHub Token，同步仓库 Star、Fork 和更新时间，用于列表排序和评分。"
-            />
-          </div>
+        <div className="space-y-3 p-4">
+          <AutoFlow
+            icon={Database}
+            title="构建知识库"
+            status="自动任务读取"
+            note="从 Skill、提示词、AI 资讯和能力画像抽取可检索知识，写入 knowledge_vectors。"
+          />
+          <AutoFlow
+            icon={BrainCircuit}
+            title="生成增长计划"
+            status={configured ? '可调用 AI API' : '等待 API Key'}
+            note="读取知识库和采集状态，生成 skills.sh、GitHub、AI 资讯、提示词的下一轮查询计划。"
+          />
+          <AutoFlow
+            icon={RefreshCw}
+            title="常驻采集消费计划"
+            status="持续轮询"
+            note="GitHub、skills.sh 与提示词常驻任务会在下一轮自动合并新增查询词。"
+          />
         </div>
       </section>
     </div>
@@ -282,13 +263,16 @@ function StatusTile({ label, value, tone = 'zinc' }: { label: string; value: str
   )
 }
 
-function AutoFlow({ title, status, note }: { title: string; status: string; note: string }) {
+function AutoFlow({ icon: Icon, title, status, note }: { icon: any; title: string; status: string; note: string }) {
   return (
     <div className="rounded-md border border-zinc-800 bg-zinc-950/50 p-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="text-sm font-medium text-zinc-100">{title}</div>
-          <div className="mt-1 text-xs leading-5 text-zinc-500">{note}</div>
+        <div className="flex min-w-0 gap-3">
+          <Icon className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
+          <div>
+            <div className="text-sm font-medium text-zinc-100">{title}</div>
+            <div className="mt-1 text-xs leading-5 text-zinc-500">{note}</div>
+          </div>
         </div>
         <span className="rounded-full border border-cyan-400/40 bg-cyan-400/10 px-2 py-0.5 text-xs text-cyan-100">{status}</span>
       </div>

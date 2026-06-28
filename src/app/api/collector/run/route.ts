@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import {
   collectorCommandForSourceSlug,
-  startCollectorJob,
+  ensureCollectorJobRunning,
 } from '@/lib/collector-runner'
 
 export const runtime = 'nodejs'
@@ -13,16 +13,17 @@ export async function POST(request: NextRequest) {
   if (!commandId) {
     return NextResponse.json({
       ok: false,
-      error: `未配置来源 ${sourceSlug} 的本地采集指令`,
+      error: `未配置来源 ${sourceSlug || '-'} 的本地采集指令`,
     }, { status: 400 })
   }
 
   try {
-    const job = await startCollectorJob(commandId)
+    const { job, started } = await ensureCollectorJobRunning(commandId)
     return NextResponse.json({
       ok: true,
-      message: sourceSlug ? `已启动来源 ${sourceSlug}` : '已启动全量采集',
+      message: started ? '已启动采集任务' : '任务已在运行，已复用现有进程',
       job,
+      started,
     })
   } catch (error) {
     return NextResponse.json({

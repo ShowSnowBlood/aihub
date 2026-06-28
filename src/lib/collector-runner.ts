@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+﻿import { spawn } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
@@ -10,7 +10,7 @@ export type CollectorJobStatus = 'running' | 'success' | 'failed' | 'stopped' | 
 export type CollectorCommandSpec = {
   id: string
   label: string
-  group: '采集' | '维护' | '诊断'
+  group: '采集' | '维护' | '诊断' | '增强' | '部署'
   description: string
   npmArgs: string[]
 }
@@ -36,13 +36,15 @@ export type CollectorJob = {
 }
 
 const JOB_ROOT = path.join(process.cwd(), '.collector-state', 'jobs')
+const START_LOCK_RETRY_MS = 250
+const START_LOCK_RETRY_COUNT = 12
 
 export const collectorCommandSpecs: CollectorCommandSpec[] = [
   {
     id: 'collector-all',
     label: '全量采集',
     group: '采集',
-    description: '按当前启用源执行一次完整采集，覆盖 AI 资讯、GitHub 与 skills.sh。',
+    description: '按当前启用源执行一次完整采集，覆盖 AI 资讯、提示词、GitHub 和 skills.sh。',
     npmArgs: ['run', 'collector:run'],
   },
   {
@@ -56,15 +58,48 @@ export const collectorCommandSpecs: CollectorCommandSpec[] = [
     id: 'prompt-library',
     label: '提示词库采集',
     group: '采集',
-    description: '采集 AiShort 社区提示词，按行业、角色、场景沉淀可复用提示词候选。',
+    description: '采集 AiShort、ai-tishici README 目录和外部提示词网站，沉淀可复用提示词候选。',
     npmArgs: ['run', 'collector:prompts'],
+  },
+  {
+    id: 'prompt-aishort-community',
+    label: 'AiShort 单源采集',
+    group: '采集',
+    description: '只采 AiShort 社区提示词，适合检查单站点接口和断点续爬状态。',
+    npmArgs: ['run', 'collector:source', '--', 'prompt-aishort-community'],
+  },
+  {
+    id: 'prompt-ai-tishici-directory',
+    label: 'ai-tishici 提示词源目录',
+    group: '采集',
+    description: '从 holmquistc407/ai-tishici README 拆出外部提示词网站，并保留原始发布链接。',
+    npmArgs: ['run', 'collector:source', '--', 'prompt-directory-ai-tishici-readme'],
   },
   {
     id: 'prompt-library-batch',
     label: '提示词库续爬',
     group: '采集',
-    description: '按断点多轮续爬 AiShort 接口，适合把当前可见提示词库逐步补齐。',
+    description: '按断点多轮续爬 AiShort 接口，适合补齐社区提示词的可见页和排序页。',
     npmArgs: ['run', 'collector:batch-prompts', '--', '--rounds', '8', '--delay-ms', '2500', '--stop-after-empty', '2'],
+  },
+  {
+    id: 'prompt-library-daemon',
+    label: '提示词库常驻同步',
+    group: '采集',
+    description: '后台常驻轮巡提示词源，持续同步 AiShort、ai-tishici README 和外部提示词站点。',
+    npmArgs: [
+      'run',
+      'collector:prompt-daemon',
+      '--',
+      '--sources',
+      'prompt-aishort-community,prompt-directory-ai-tishici-readme,prompt-best-chinese-prompt,prompt-fresns-cn,prompt-perfect-jina,prompt-vibes,promptbase-marketplace,prompthunt-community,snackprompt-community,flowgpt-prompts,imiprompt-midjourney,prompt-krwoo-image,moonvy-ops-prompt,publicprompts-art,promptingguide-ai-zh,learningprompt-wiki,krea-ai-home,openart-ai,promptfolder-midjourney-helper',
+      '--cycle-delay-ms',
+      '90000',
+      '--source-delay-ms',
+      '2000',
+      '--max-cycles',
+      '0',
+    ],
   },
   {
     id: 'github-index',
@@ -74,10 +109,17 @@ export const collectorCommandSpecs: CollectorCommandSpec[] = [
     npmArgs: ['run', 'collector:source', '--', 'github-global-skill-index'],
   },
   {
+    id: 'github-full-skill-index',
+    label: 'GitHub 全量 Skill 索引',
+    group: '采集',
+    description: '用 GitHub Search 发现 Skill，再用 GitHub Core API 补齐仓库、tree 和 SKILL.md 元数据。',
+    npmArgs: ['run', 'collector:batch-skills', '--', '--sources', 'github-global-skill-index,skills-sh-github-sources', '--rounds', '8', '--delay-ms', '1500'],
+  },
+  {
     id: 'github-python-crawler-skills',
     label: 'Python 爬虫 Skill',
     group: '采集',
-    description: '采集 GitHub 上 Python 爬虫、网页解析、浏览器自动化和数据采集类 Skill。',
+    description: '采集 GitHub 中 Python 爬虫、网页解析、浏览器自动化和数据采集类 Skill。',
     npmArgs: ['run', 'collector:source', '--', 'github-python-crawler-skill-index'],
   },
   {
@@ -89,7 +131,7 @@ export const collectorCommandSpecs: CollectorCommandSpec[] = [
   },
   {
     id: 'skills-sh-all',
-    label: 'skills.sh 公开页/API',
+    label: 'skills.sh 公开页 API',
     group: '采集',
     description: '采集 skills.sh 公开可见数据，配置 token 后可走 API。',
     npmArgs: ['run', 'collector:source', '--', 'skills-sh-all'],
@@ -113,17 +155,7 @@ export const collectorCommandSpecs: CollectorCommandSpec[] = [
     label: 'GitHub + skills.sh 常驻同步',
     group: '采集',
     description: '后台常驻循环同步 GitHub 全网 Skill 索引与 skills.sh 全链路，结束每轮后同步到本地 SkillResource。',
-    npmArgs: [
-      'run',
-      'collector:skills-sh-daemon',
-      '--',
-      '--sources',
-      'skills-sh-all,skills-sh-browser-slow,skills-sh-search-index,skills-sh-github-sources,github-global-skill-index,github-python-crawler-skill-index,github-cybersecurity-skill-index',
-      '--cycle-delay-ms',
-      '60000',
-      '--source-delay-ms',
-      '3000',
-    ],
+    npmArgs: ['run', 'collector:skills-sh-daemon', '--', '--sources', 'skills-sh-all,skills-sh-browser-slow,skills-sh-search-index,skills-sh-github-sources,github-global-skill-index,github-python-crawler-skill-index,github-cybersecurity-skill-index', '--cycle-delay-ms', '60000', '--source-delay-ms', '3000'],
   },
   {
     id: 'sync-external-skills',
@@ -150,7 +182,7 @@ export const collectorCommandSpecs: CollectorCommandSpec[] = [
     id: 'seed-sources',
     label: '同步源配置',
     group: '维护',
-    description: '把当前 GitHub / skills.sh 数据源配置同步到数据库。',
+    description: '把当前 GitHub、skills.sh、AI 资讯和提示词源配置同步到数据库。',
     npmArgs: ['run', 'collector:seed-sources'],
   },
   {
@@ -164,15 +196,22 @@ export const collectorCommandSpecs: CollectorCommandSpec[] = [
     id: 'backfill-skill-links',
     label: '回填原始链接',
     group: '维护',
-    description: '把 skills.sh 历史链接回填为可追溯 GitHub/详情源。',
+    description: '把 skills.sh 历史链接回填为可追溯 GitHub 或详情源。',
     npmArgs: ['run', 'collector:admin', '--', 'backfill-skill-source-links', '--source', 'skills-sh', '--limit', '50000'],
+  },
+  {
+    id: 'optimize-skill-data',
+    label: '数据优化校准',
+    group: '维护',
+    description: '回填原始链接、标记数据质量、同步 GitHub Star、重算分类，并把有效记录同步到 SkillResource。',
+    npmArgs: ['run', 'collector:admin', '--', 'optimize-external-skill-data', '--limit', '100000', '--repo-limit', '5000', '--concurrency', '4', '--sync-limit', '100000', '--sync-repo-limit', '10000'],
   },
   {
     id: 'enrich-github-skill-metadata',
     label: '同步 GitHub Star',
     group: '维护',
-    description: '通过 GitHub Token 快速同步 GitHub/skills.sh Skill 源仓库 stars 和 forks，不拉 release，适合列表排序。',
-    npmArgs: ['run', 'collector:sync-github-stars', '--', '--source', 'skills-sh', '--limit', '50000', '--repo-limit', '5000', '--concurrency', '4'],
+    description: '通过 GitHub Token 快速同步 GitHub/skills.sh Skill 源仓库 stars 和 forks。',
+    npmArgs: ['run', 'collector:sync-github-stars', '--', '--limit', '100000', '--repo-limit', '5000', '--concurrency', '4'],
   },
   {
     id: 'backfill-external-skill-metrics',
@@ -185,8 +224,36 @@ export const collectorCommandSpecs: CollectorCommandSpec[] = [
     id: 'build-tool-capability-profiles',
     label: '生成工具能力画像',
     group: '维护',
-    description: '从 Python 爬虫和网络攻防 Skill 原始库提炼关键词、GitHub 查询、热门仓库、工具提示和安全策略，反哺下一轮采集。',
+    description: '从 Python 爬虫和网络攻防 Skill 原始库提炼关键词、GitHub 查询、热门仓库、工具提示和安全策略。',
     npmArgs: ['run', 'collector:build-capabilities'],
+  },
+  {
+    id: 'build-knowledge-vectors',
+    label: '构建 DeepSeek 知识库',
+    group: '增强',
+    description: '把 Skill、AI 资讯、提示词和能力画像写入本地 knowledge_vectors 检索库。',
+    npmArgs: ['run', 'collector:build-knowledge', '--', '--limit', '50000'],
+  },
+  {
+    id: 'deepseek-growth-plan',
+    label: 'DeepSeek 生成增长计划',
+    group: '增强',
+    description: '让 DeepSeek 读取知识库和能力画像，生成 Skill、AI 资讯、提示词的下一轮采集计划。',
+    npmArgs: ['run', 'collector:deepseek-plan'],
+  },
+  {
+    id: 'deepseek-growth-dispatch',
+    label: 'DeepSeek 增强调度',
+    group: '增强',
+    description: '先构建知识库并生成 DeepSeek 增长计划，然后启动 Skill、提示词和 AI 资讯常驻/刷新任务。',
+    npmArgs: ['run', 'collector:admin', '--', 'deepseek-growth-dispatch'],
+  },
+  {
+    id: 'apply-latest-deploy-package',
+    label: '应用最新部署包',
+    group: '部署',
+    description: '解压后台上传的最新部署包，保留本机配置与采集状态，安装依赖、同步 Prisma、构建 UI，并在 PM2 环境自动重载。',
+    npmArgs: ['run', 'collector:deploy-latest'],
   },
   {
     id: 'mark-topic-mismatch-skills',
@@ -221,7 +288,7 @@ export const collectorCommandSpecs: CollectorCommandSpec[] = [
     label: '重算中文分类',
     group: '维护',
     description: '按当前规则重算 skills.sh/GitHub Skill 的中文分类和标签。',
-    npmArgs: ['run', 'collector:admin', '--', 'reclassify-external-skills', '--source', 'skills-sh', '--limit', '10000'],
+    npmArgs: ['run', 'collector:admin', '--', 'reclassify-external-skills', '--limit', '100000'],
   },
   {
     id: 'collector-stats',
@@ -231,11 +298,40 @@ export const collectorCommandSpecs: CollectorCommandSpec[] = [
     npmArgs: ['run', 'collector:stats'],
   },
 ]
-
 const commandById = new Map(collectorCommandSpecs.map(command => [command.id, command]))
 
 function jobPath(jobId: string) {
   return path.join(JOB_ROOT, `${jobId}.json`)
+}
+
+function commandLockPath(commandId: string) {
+  const safeCommandId = commandId.replace(/[^a-z0-9_-]/gi, '-')
+  return path.join(JOB_ROOT, `${safeCommandId}.start.lock`)
+}
+
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
+async function acquireCommandStartLock(commandId: string) {
+  await fs.mkdir(JOB_ROOT, { recursive: true })
+  const lockPath = commandLockPath(commandId)
+  try {
+    const handle = await fs.open(lockPath, 'wx')
+    await handle.writeFile(JSON.stringify({
+      commandId,
+      pid: process.pid,
+      createdAt: new Date().toISOString(),
+    }))
+    return { handle, lockPath, acquired: true }
+  } catch (error: any) {
+    if (error?.code === 'EEXIST') return { lockPath, acquired: false }
+    throw error
+  }
+}
+
+async function releaseCommandStartLock(lock?: { handle?: fs.FileHandle; lockPath?: string; acquired?: boolean }) {
+  if (!lock?.acquired) return
+  await lock.handle?.close().catch(() => undefined)
+  if (lock.lockPath) await fs.unlink(lock.lockPath).catch(() => undefined)
 }
 
 function spawnCommand(npmArgs: string[]) {
@@ -322,9 +418,37 @@ export async function readCollectorJobLog(job: CollectorJob, maxChars = 20000) {
 
 export async function startCollectorJob(commandId: string) {
   const spec = commandById.get(commandId)
-  if (!spec) throw new Error(`未知采集指令：${commandId}`)
+  if (!spec) throw new Error(`鏈煡閲囬泦鎸囦护锛?{commandId}`)
 
-  loadLocalGithubToken()
+  const existing = await findRunningCollectorJob(commandId)
+  if (existing) return existing
+
+  let startLock = await acquireCommandStartLock(commandId)
+  if (!startLock.acquired) {
+    for (let attempt = 0; attempt < START_LOCK_RETRY_COUNT; attempt += 1) {
+      await sleep(START_LOCK_RETRY_MS)
+      const running = await findRunningCollectorJob(commandId)
+      if (running) return running
+    }
+
+    const stat = await fs.stat(commandLockPath(commandId)).catch(() => null)
+    if (stat && Date.now() - stat.mtimeMs > 15000) {
+      await fs.unlink(commandLockPath(commandId)).catch(() => undefined)
+      startLock = await acquireCommandStartLock(commandId)
+    }
+  }
+
+  if (!startLock.acquired) {
+    const running = await findRunningCollectorJob(commandId)
+    if (running) return running
+    throw new Error(`Collector command ${commandId} is already starting. Please refresh in a few seconds.`)
+  }
+
+  try {
+    const runningAfterLock = await findRunningCollectorJob(commandId)
+    if (runningAfterLock) return runningAfterLock
+
+    loadLocalGithubToken()
   await fs.mkdir(JOB_ROOT, { recursive: true })
 
   const id = `${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID().slice(0, 8)}`
@@ -366,7 +490,7 @@ export async function startCollectorJob(commandId: string) {
     })
   } catch (error) {
     job.status = 'failed'
-    job.error = error instanceof Error ? error.message : '启动任务失败'
+    job.error = error instanceof Error ? error.message : '鍚姩浠诲姟澶辫触'
     job.finishedAt = new Date().toISOString()
     await fs.appendFile(logFile, `\n[runner:error] ${job.error}\n`).catch(() => undefined)
     await writeJob(job)
@@ -404,7 +528,10 @@ export async function startCollectorJob(commandId: string) {
     await writeJob(job)
   })
 
-  return job
+    return job
+  } finally {
+    await releaseCommandStartLock(startLock)
+  }
 }
 
 export async function stopCollectorJob(jobId: string) {
@@ -430,7 +557,7 @@ export async function stopCollectorJob(jobId: string) {
     await fs.appendFile(job.logFile, `\n[runner:stop] requested at ${job.finishedAt}\n`).catch(() => undefined)
     await writeJob(job)
   } catch (error) {
-    throw new Error(error instanceof Error ? error.message : '停止任务失败')
+    throw new Error(error instanceof Error ? error.message : '鍋滄浠诲姟澶辫触')
   }
 
   return job
@@ -439,9 +566,13 @@ export async function stopCollectorJob(jobId: string) {
 export function collectorCommandForSourceSlug(sourceSlug?: string) {
   if (!sourceSlug) return 'collector-all'
   if (sourceSlug === 'ai-news' || sourceSlug.startsWith('ai-news-')) return 'ai-news'
-  if (sourceSlug === 'prompt-library' || sourceSlug.startsWith('prompt-')) return 'prompt-library'
+  if (sourceSlug === 'prompt-aishort-community') return 'prompt-aishort-community'
+  if (sourceSlug === 'prompt-directory-ai-tishici-readme') return 'prompt-ai-tishici-directory'
+  if (sourceSlug === 'prompt-library') return 'prompt-library'
+  if (sourceSlug === 'prompt-library-daemon') return 'prompt-library-daemon'
   const map: Record<string, string> = {
     'github-global-skill-index': 'github-index',
+    'github-full-skill-index': 'github-full-skill-index',
     'github-python-crawler-skill-index': 'github-python-crawler-skills',
     'github-cybersecurity-skill-index': 'github-cybersecurity-skills',
     'skills-sh-all': 'skills-sh-all',
@@ -455,8 +586,13 @@ export function collectorCommandForSourceSlug(sourceSlug?: string) {
 export function collectorSourceSlugForCommand(commandId?: string) {
   const map: Record<string, string> = {
     'ai-news': 'ai-news',
-    'prompt-library': 'prompt-aishort-community',
+    'prompt-library': 'prompt-library',
+    'prompt-library-daemon': 'prompt-library',
+    'prompt-aishort-community': 'prompt-aishort-community',
+    'prompt-ai-tishici-directory': 'prompt-directory-ai-tishici-readme',
+    'prompt-library-batch': 'prompt-aishort-community',
     'github-index': 'github-global-skill-index',
+    'github-full-skill-index': 'github-full-skill-index',
     'github-python-crawler-skills': 'github-python-crawler-skill-index',
     'github-cybersecurity-skills': 'github-cybersecurity-skill-index',
     'skills-sh-all': 'skills-sh-all',
@@ -466,3 +602,4 @@ export function collectorSourceSlugForCommand(commandId?: string) {
   }
   return commandId ? map[commandId] || '' : ''
 }
+

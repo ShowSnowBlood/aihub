@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { ArrowUpRight, Globe2, Layers3, RefreshCw } from 'lucide-react'
 
@@ -109,8 +109,11 @@ export default function CollectorLiveSources({ initialData }: Props) {
   const [data, setData] = useState(initialData)
   const [error, setError] = useState('')
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const loadingRef = useRef(false)
 
   async function load() {
+    if (loadingRef.current) return
+    loadingRef.current = true
     setIsRefreshing(true)
     try {
       const response = await fetch('/api/collector/sources', { cache: 'no-store' })
@@ -128,6 +131,7 @@ export default function CollectorLiveSources({ initialData }: Props) {
     } catch (err) {
       setError(err instanceof Error ? err.message : '数据源刷新失败')
     } finally {
+      loadingRef.current = false
       setIsRefreshing(false)
     }
   }
@@ -136,7 +140,7 @@ export default function CollectorLiveSources({ initialData }: Props) {
     void load()
     const timer = window.setInterval(() => {
       if (document.visibilityState === 'visible') void load()
-    }, 3000)
+    }, 5000)
     return () => window.clearInterval(timer)
   }, [])
 
@@ -144,11 +148,11 @@ export default function CollectorLiveSources({ initialData }: Props) {
 
   return (
     <section className="grid gap-4 2xl:grid-cols-[1.15fr_0.85fr]">
-      <Panel title="AI 资讯、提示词、GitHub 与 skills.sh 数据源" icon={Globe2} description="来源状态、入库数量和最近运行时间每 3 秒同步一次。">
+      <Panel title="AI 资讯、提示词、GitHub 与 skills.sh 数据源" icon={Globe2} description="来源状态、入库数量和最近运行时间每 5 秒同步一次。">
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-cyan-400/20 bg-cyan-400/5 px-3 py-2 text-xs">
           <div className="flex items-center gap-2 text-cyan-100">
             <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
-            <span>实时同步 · 3 秒</span>
+            <span>实时同步 · 5 秒</span>
             <span className={error ? 'text-red-300' : 'text-zinc-500'}>
               {error || `已刷新 ${formatDate(data.refreshedAt)}`}
             </span>

@@ -684,3 +684,52 @@ model CollectionReviewAction {
   @@index([action])
   @@map("collection_review_actions")
 }
+
+model KnowledgeVector {
+  id          Int      @id @default(autoincrement())
+  scope       String
+  sourceType  String
+  sourceId    String?
+  sourceSlug  String?
+  title       String
+  url         String?
+  text        String
+  keywords    String?
+  metadata    String   @default("{}")
+  fingerprint String   @unique
+  score       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([scope])
+  @@index([sourceType])
+  @@index([sourceSlug])
+  @@index([score])
+  @@map("knowledge_vectors")
+}
+
+model SkillLibraryVersion {
+  id                 Int       @id @default(autoincrement())
+  version            String    @unique
+  title              String?
+  status             String    @default("uploaded")
+  packageName        String?
+  packagePath        String?
+  packageSize        Int       @default(0)
+  checksum           String?
+  notes              String?
+  operator           String?
+  jobId              String?
+  skillCount         Int       @default(0)
+  externalSkillCount Int       @default(0)
+  promptCount        Int       @default(0)
+  newsCount          Int       @default(0)
+  startedAt          DateTime?
+  finishedAt         DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("skill_library_versions")
+}

@@ -19,7 +19,8 @@ export async function GET(_request: Request, { params }: { params: { id: string 
   const sourceSlug = collectorSourceSlugForCommand(job.commandId)
   const since = new Date(job.startedAt)
   const finishedAt = job.finishedAt ? new Date(job.finishedAt) : new Date()
-  const source = sourceSlug && sourceSlug !== 'ai-news'
+  const isPromptGroup = sourceSlug === 'prompt-library'
+  const source = sourceSlug && sourceSlug !== 'ai-news' && !isPromptGroup
     ? await prisma.collectionSource.findUnique({
       where: { slug: sourceSlug },
       include: { _count: { select: { candidates: true, runs: true, externalSkills: true } } },
@@ -37,7 +38,9 @@ export async function GET(_request: Request, { params }: { params: { id: string 
         },
       },
     }
-    : sourceSlug
+    : isPromptGroup
+      ? { source: { is: { target: 'prompt' } } }
+      : sourceSlug
       ? { source: { is: { slug: sourceSlug } } }
       : {}
 
@@ -53,7 +56,9 @@ export async function GET(_request: Request, { params }: { params: { id: string 
       },
       startedAt: { gte: since },
     }
-    : sourceSlug
+    : isPromptGroup
+      ? { source: { is: { target: 'prompt' } }, startedAt: { gte: since } }
+      : sourceSlug
       ? { source: { is: { slug: sourceSlug } }, startedAt: { gte: since } }
       : { startedAt: { gte: since } }
 
@@ -63,7 +68,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
   }
   const externalSkillWhere: any = {
     collectedAt: { gte: since, lte: finishedAt },
-    ...(sourceSlug && sourceSlug !== 'ai-news' ? { sourceSlug } : {}),
+    ...(sourceSlug && sourceSlug !== 'ai-news' && !isPromptGroup ? { sourceSlug } : {}),
   }
 
   const runs = await prisma.collectionRun.findMany({

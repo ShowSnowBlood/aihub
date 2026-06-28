@@ -59,12 +59,13 @@ if not exist node_modules (
 )
 
 echo.
-if exist node_modules\.prisma\client\query_engine-windows.dll.node (
-  echo [SKIP] Prisma Client already exists.
-) else (
-  echo [SETUP] Generating Prisma Client...
-  call npm run db:generate
-  if errorlevel 1 goto :error
+echo [SETUP] Generating Prisma Client...
+call npm run db:generate
+if errorlevel 1 (
+  echo.
+  echo [TIP] Prisma generate can fail on Windows when another AIHub Node process locks query_engine-windows.dll.node.
+  echo [TIP] Close the running collector window or stop the server on port 3001, then run this script again.
+  goto :error
 )
 
 if /i "%~1"=="--skip-seed" (
@@ -79,6 +80,10 @@ if /i "%~1"=="--skip-seed" (
     echo [WARN] Starting offline console mode. Data tables need the database.
     echo [TIP] Start PostgreSQL later, then refresh http://localhost:3001/collector.
   ) else (
+    echo.
+    echo [SETUP] Syncing database schema...
+    call npx prisma db push
+    if errorlevel 1 goto :error
     echo.
     echo [SETUP] Seeding collector sources: GitHub and skills.sh...
     call npm run collector:seed-sources

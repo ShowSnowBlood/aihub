@@ -43,6 +43,8 @@ export function middleware(request: NextRequest) {
   const windowMs = 60_000
   const isLocalHost = host === 'localhost' || host === '127.0.0.1' || host === '::1'
   const isLocalCollectorApi = isLocalHost && pathname.startsWith('/api/collector/')
+  const isSkillCrawlerSyncApi = pathname === '/api/v1/skills/getlist'
+  const isTrustedMachineApi = isLocalCollectorApi || isSkillCrawlerSyncApi
 
   // 对可疑 User-Agent 直接拦截
   const dangerousUA = ['curl', 'wget', 'python-requests', 'Go-http-client', 'fasthttp', 'Scrapy', 'okhttp']
@@ -54,7 +56,7 @@ export function middleware(request: NextRequest) {
     dangerousUA.some(ua => userAgent.toLowerCase().includes(ua.toLowerCase()))
   )
 
-  if (isSuspicious && !isLocalCollectorApi) {
+  if (isSuspicious && !isTrustedMachineApi) {
     console.warn(`⚠️ 拦截可疑请求: ${ip} - ${pathname} - UA: ${userAgent.substring(0, 50)}`)
     return new NextResponse(
       JSON.stringify({ error: '请求被拒绝' }),
@@ -100,6 +102,14 @@ export function middleware(request: NextRequest) {
   // === CORS：处理 OPTIONS 预检请求 ===
   if (request.method === 'OPTIONS') {
     return new NextResponse(null, { status: 204, headers: { ...corsHeaders(request), ...SECURITY_HEADERS } })
+  }
+
+  if (isSkillCrawlerSyncApi) {
+    const response = NextResponse.next()
+    for (const [key, value] of Object.entries({ ...corsHeaders(request), ...SECURITY_HEADERS })) {
+      response.headers.set(key, value)
+    }
+    return response
   }
 
   const isHF = userAgent.includes('HuggingFace') || request.headers.get('origin')?.includes('hf.space')

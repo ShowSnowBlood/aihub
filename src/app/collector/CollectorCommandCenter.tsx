@@ -7,7 +7,7 @@ import { Activity, AlertTriangle, CheckCircle2, Loader2, Play, RefreshCw, Square
 type CollectorCommand = {
   id: string
   label: string
-  group: '采集' | '维护' | '诊断'
+  group: string
   description: string
   npmArgs: string[]
 }
@@ -70,7 +70,6 @@ export default function CollectorCommandCenter({ initialCommands, initialJobs }:
     () => commands.find(command => command.id === selectedCommand),
     [commands, selectedCommand],
   )
-
   const runningJobs = jobs.filter(job => job.status === 'running')
 
   async function refreshJobs() {
@@ -95,9 +94,7 @@ export default function CollectorCommandCenter({ initialCommands, initialJobs }:
         body: JSON.stringify({ commandId }),
       })
       const data = await response.json()
-      if (!response.ok || data?.ok === false) {
-        throw new Error(data?.error || '任务启动失败')
-      }
+      if (!response.ok || data?.ok === false) throw new Error(data?.error || '任务启动失败')
       setMessage(`已启动：${data.job.label}`)
       setSelectedJob(data.job)
       window.location.href = `/collector/jobs/${encodeURIComponent(data.job.id)}`
@@ -120,9 +117,7 @@ export default function CollectorCommandCenter({ initialCommands, initialJobs }:
         body: JSON.stringify({ jobId }),
       })
       const data = await response.json()
-      if (!response.ok || data?.ok === false) {
-        throw new Error(data?.error || '停止失败')
-      }
+      if (!response.ok || data?.ok === false) throw new Error(data?.error || '停止失败')
       setMessage(`已发送停止指令：${data.job.label}`)
       await refreshJobs()
     } catch (stopError) {

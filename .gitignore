@@ -30,6 +30,8 @@ prisma/dev.db-journal
 
 # Build artifacts
 tsconfig.tsbuildinfo
+.next-deploy/
+exports/
 
 # OS
 .DS_Store

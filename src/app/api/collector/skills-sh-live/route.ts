@@ -11,6 +11,9 @@ type BrowserState = {
   seen?: string[]
   lastSeenCount?: number
   lastRunAt?: string
+  nextUrlIndex?: number
+  nextUrlIndexUpdatedAt?: string
+  discoveredPages?: Array<Record<string, any>>
   pages?: Record<string, any>
   runs?: Array<Record<string, any>>
   totals?: {
@@ -129,8 +132,26 @@ function parseDaemonEvents(log: string) {
   }
 }
 
+const usableExternalSkillWhere = {
+  AND: [
+    {
+      OR: [
+        { sourceSlug: { contains: 'skills-sh' } },
+        { sourceSlug: { contains: 'github' } },
+      ],
+    },
+    {
+      status: {
+        notIn: ['ignored', 'low_quality', 'out_of_scope', 'needs_source', 'aggregated_source'],
+      },
+    },
+  ],
+}
+
 export async function GET() {
   try {
+    const since5m = new Date(Date.now() - 5 * 60 * 1000)
+    const since30m = new Date(Date.now() - 30 * 60 * 1000)
     const sourceSlugs = [
       'skills-sh-browser-slow',
       'skills-sh-all',
@@ -140,7 +161,20 @@ export async function GET() {
       'github-python-crawler-skill-index',
       'github-cybersecurity-skill-index',
     ]
-    const [sources, skillSourceGroups, jobs, skillResourceTotal, linkedExternalSkillTotal] = await Promise.all([
+    const [
+      sources,
+      skillSourceGroups,
+      jobs,
+      skillResourceTotal,
+      linkedExternalSkillTotal,
+      externalSkillTotal,
+      externalCreated5m,
+      externalUpdated5m,
+      externalCreated30m,
+      externalUpdated30m,
+      skillResourceUpdated5m,
+      skillResourceUpdated30m,
+    ] = await Promise.all([
       prisma.collectionSource.findMany({
         where: { slug: { in: sourceSlugs } },
         select: {
@@ -152,19 +186,19 @@ export async function GET() {
       }),
       prisma.externalSkill.groupBy({
         by: ['sourceSlug'],
-        where: {
-          OR: [
-            { sourceSlug: { contains: 'skills-sh' } },
-            { sourceSlug: 'github-global-skill-index' },
-            { sourceSlug: 'github-python-crawler-skill-index' },
-            { sourceSlug: 'github-cybersecurity-skill-index' },
-          ],
-        },
+        where: usableExternalSkillWhere,
         _count: { _all: true },
       }),
       listCollectorJobs(12),
-      prisma.skillResource.count(),
-      prisma.externalSkill.count({ where: { publishedRef: { not: null } } }),
+      prisma.skillResource.count({ where: { sourceType: 'external-skill', isActive: true } }),
+      prisma.externalSkill.count({ where: { ...usableExternalSkillWhere, publishedRef: { not: null } } }),
+      prisma.externalSkill.count({ where: usableExternalSkillWhere }),
+      prisma.externalSkill.count({ where: { ...usableExternalSkillWhere, collectedAt: { gte: since5m } } }),
+      prisma.externalSkill.count({ where: { ...usableExternalSkillWhere, updatedAt: { gte: since5m } } }),
+      prisma.externalSkill.count({ where: { ...usableExternalSkillWhere, collectedAt: { gte: since30m } } }),
+      prisma.externalSkill.count({ where: { ...usableExternalSkillWhere, updatedAt: { gte: since30m } } }),
+      prisma.skillResource.count({ where: { updatedAt: { gte: since5m } } }),
+      prisma.skillResource.count({ where: { updatedAt: { gte: since30m } } }),
     ])
 
     const sourceBySlug = new Map(sources.map(source => [source.slug, source]))
@@ -212,11 +246,18 @@ export async function GET() {
       : Number(browserState.lastSeenCount || 0)
     const publicVisibleTotal = Number(browserState.totals?.totalSkills || browserState.liveStats?.totalSkills || browserLastRun?.totalSkills || 0)
     const installSignalTotal = Number(browserState.totals?.allTimeTotal || browserState.liveStats?.allTimeTotal || browserLastRun?.allTimeTotal || 0)
-    const targetTotal = Number(installSignalTotal || publicVisibleTotal || browserConfig.totalTarget || 80000)
+    const targetTotal = Number(publicVisibleTotal || browserConfig.totalTarget || 80000)
     const skillsShStatsSyncedAt = browserState.liveStats?.fetchedAt || browserState.lastRunAt || browserLastRun?.finishedAt || browserLastRun?.startedAt || null
-    const daemonJob = jobs.find(job => job.commandId === 'skills-sh-daemon' && job.status === 'running')
+    const daemonJob = jobs
+      .filter(job => job.commandId === 'skills-sh-daemon' && job.status === 'running')
+      .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0]
     const daemonLog = daemonJob ? await readCollectorJobLog(daemonJob, 28000) : ''
     const daemonEvents = parseDaemonEvents(daemonLog)
+    const promptDaemonJob = jobs
+      .filter(job => job.commandId === 'prompt-library-daemon' && job.status === 'running')
+      .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0]
+    const promptDaemonLog = promptDaemonJob ? await readCollectorJobLog(promptDaemonJob, 28000) : ''
+    const promptDaemonEvents = parseDaemonEvents(promptDaemonLog)
 
     return NextResponse.json({
       ok: true,
@@ -237,6 +278,15 @@ export async function GET() {
         githubCybersecurityTotal: countFor('github-cybersecurity-skill-index'),
         skillResourceTotal,
         linkedExternalSkillTotal,
+        externalSkillTotal,
+        recentActivity: {
+          externalCreated5m,
+          externalUpdated5m,
+          externalCreated30m,
+          externalUpdated30m,
+          skillResourceUpdated5m,
+          skillResourceUpdated30m,
+        },
         skillsShSearchState: {
           nextQueryIndex: Number(skillsShSearchState.nextQueryIndex || 0),
           queryCount: Number(skillsShSearchState.queryCount || 0),
@@ -282,6 +332,11 @@ export async function GET() {
         skillsShDaemonNote: formatDaemonNote(daemonJob),
         skillsShDaemonPid: daemonJob?.pid || null,
         skillsShDaemonStartedAt: daemonJob?.startedAt || null,
+        promptDaemonStatus: promptDaemonJob ? 'running' : 'starting',
+        promptDaemonNote: formatDaemonNote(promptDaemonJob),
+        promptDaemonPid: promptDaemonJob?.pid || null,
+        promptDaemonStartedAt: promptDaemonJob?.startedAt || null,
+        promptDaemonEvents,
         daemonEvents,
         skillsShSourceStatus: skillsShSlow?.enabled ? skillsShSlow?.lastStatus || 'idle' : 'disabled',
         browserConfig: {
@@ -290,6 +345,25 @@ export async function GET() {
           scrollSteps: Number(browserConfig.scrollSteps || 10),
           delayMs: Number(browserConfig.delayMs || 1000),
           maxClicks: Number(browserConfig.maxClicks || 20),
+          maxPagesPerRun: Number(browserConfig.maxPagesPerRun || 0),
+          rotatePages: browserConfig.rotatePages !== false,
+          includeSeen: Boolean(browserConfig.includeSeen),
+        },
+        browserRotation: {
+          nextUrlIndex: Number(browserState.nextUrlIndex || 0),
+          nextUrlIndexUpdatedAt: browserState.nextUrlIndexUpdatedAt || null,
+          discoveredPageCount: Array.isArray(browserState.discoveredPages) ? browserState.discoveredPages.length : 0,
+          lastRunAt: browserState.lastRunAt || null,
+          lastRun: browserLastRun ? {
+            url: browserLastRun.url || null,
+            totalParsed: Number(browserLastRun.totalParsed || 0),
+            emittedCount: Number(browserLastRun.emittedCount || 0),
+            freshCount: Number(browserLastRun.freshCount || 0),
+            replayCount: Number(browserLastRun.replayCount || 0),
+            seenCount: Number(browserLastRun.seenCount || 0),
+            startedAt: browserLastRun.startedAt || null,
+            finishedAt: browserLastRun.finishedAt || null,
+          } : null,
         },
         browserPages: statePages(browserState),
       },

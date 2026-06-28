@@ -12,8 +12,14 @@ export const dynamic = 'force-dynamic'
 
 export async function GET() {
   loadLocalGithubToken()
+  const check = await testGithubToken().catch(error => ({
+    ok: false,
+    status: 503,
+    message: error instanceof Error ? error.message : 'GitHub Token 检测失败。',
+  }))
   return NextResponse.json({
     config: getGithubConfigStatus(),
+    check,
   })
 }
 

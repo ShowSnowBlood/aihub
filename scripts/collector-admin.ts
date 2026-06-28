@@ -2,6 +2,10 @@ import { PrismaClient } from '@prisma/client'
 import { existsSync, readFileSync } from 'node:fs'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
+import { spawnSync } from 'node:child_process'
+import { classifySkill, semanticSkillTags } from '../src/lib/skill-classifier'
+import { buildKnowledgeVectors } from '../src/lib/knowledge-vector'
+import { generateDeepSeekGrowthPlan } from '../src/lib/deepseek-orchestrator'
 
 const prisma = new PrismaClient()
 
@@ -160,6 +164,25 @@ function githubRepoFromSkill(row: { sourceUrl?: string | null; githubUrl?: strin
   ))
 }
 
+function githubPublishedRepoFromSkill(row: { sourceUrl?: string | null; githubUrl?: string | null; rawData?: string | null }) {
+  const raw = parseJson<Record<string, any>>(row.rawData, {})
+  const item = raw.item && typeof raw.item === 'object' ? raw.item : {}
+  const github = raw.github && typeof raw.github === 'object' ? raw.github : {}
+  return normalizeGithubRepoKey(firstString(
+    githubRepoFromUrl(row.sourceUrl),
+    githubRepoFromUrl(raw.skillMdUrl),
+    githubRepoFromUrl(github.skillMdUrl),
+    raw.sourceRepo,
+    github.sourceRepo,
+    raw.repo,
+    raw.source,
+    item.source,
+    githubRepoFromUrl(raw.sourceRepoUrl),
+    githubRepoFromUrl(raw.sourceUrl),
+    githubRepoFromUrl(row.githubUrl),
+  ))
+}
+
 function githubSkillPathFromUrl(value?: string | null) {
   if (!value) return ''
   try {
@@ -186,6 +209,31 @@ function githubInfoFromRaw(rawData?: string | null) {
   const downloads = Math.max(releaseDownloads, installs)
   const skillPath = firstString(raw.skillMdPath, github.skillMdPath, github.skillPath, raw.file)
   return { repo, stars, forks, downloads, skillPath }
+}
+
+function githubMetricsForPublishedRepo(row: { sourceUrl?: string | null; rawData?: string | null }, repo: string) {
+  const raw = parseJson<Record<string, any>>(row.rawData, {})
+  const github = raw.github && typeof raw.github === 'object' ? raw.github : {}
+  const normalizedRepo = normalizeGithubRepoKey(repo)
+  const metricRepo = normalizeGithubRepoKey(firstString(
+    github.repo,
+    raw.originalRepo,
+    raw.installRepo,
+    raw.repo,
+  ))
+  const sourceRepo = githubPublishedRepoFromSkill(row)
+  if (!normalizedRepo || normalizedRepo.toLowerCase() !== sourceRepo.toLowerCase()) {
+    return { stars: 0, forks: 0, downloads: 0 }
+  }
+  if (metricRepo && metricRepo.toLowerCase() !== normalizedRepo.toLowerCase()) {
+    return { stars: 0, forks: 0, downloads: 0 }
+  }
+  const info = githubInfoFromRaw(row.rawData)
+  return {
+    stars: toNumberValue(info.stars),
+    forks: toNumberValue(info.forks),
+    downloads: toNumberValue(info.downloads),
+  }
 }
 
 function githubMetricsFromRow(row: {
@@ -536,6 +584,27 @@ type ToolCapabilityProfile = {
   }>
 }
 
+type ToolCapabilityHistoryProfile = {
+  sourceSlug: string
+  label: string
+  skillCount: number
+  activeSkillCount: number
+  repoCount: number
+  queryCount: number
+  keywordCount: number
+}
+
+type ToolCapabilityHistoryEntry = {
+  generatedAt: string
+  totalProfiles: number
+  totalSkills: number
+  totalActiveSkills: number
+  totalRepos: number
+  totalQueries: number
+  totalKeywords: number
+  profiles: Record<string, ToolCapabilityHistoryProfile>
+}
+
 type ToolCapabilityState = {
   version: number
   generatedAt: string
@@ -545,6 +614,7 @@ type ToolCapabilityState = {
     notes: string[]
   }
   profiles: Record<string, ToolCapabilityProfile>
+  history?: ToolCapabilityHistoryEntry[]
 }
 
 const capabilityKeywordCatalog: Record<string, string[]> = {
@@ -713,6 +783,51 @@ const capabilityStopWords = new Set([
   'github 源仓库',
 ])
 
+const mojibakeFragments = [
+  '鐖',
+  '閲',
+  '瀹',
+  '缃',
+  '鏀',
+  '鍒',
+  '鍙',
+  '濞',
+  '搴',
+  '鎶',
+  '鑳',
+  '鎬',
+  '琛',
+  '淇',
+  '椋',
+  '鏂',
+  '绌',
+  '绋',
+  '璇',
+  '妯',
+  '鍏',
+  '浠',
+  '邃',
+  '鈥',
+  '銆',
+  '€',
+  '�',
+]
+
+function isLikelyMojibake(value: string) {
+  return mojibakeFragments.some(fragment => value.includes(fragment))
+}
+
+function isUsefulCapabilityKeyword(value: string) {
+  const normalized = value.trim().toLowerCase()
+  if (!normalized) return false
+  if (normalized.length < 3 && !/[\u4e00-\u9fff]{2}/.test(normalized)) return false
+  if (capabilityStopWords.has(normalized)) return false
+  if (isLikelyMojibake(value)) return false
+  if (/^(when|then|that|this|from|with|into|after|before|about)$/.test(normalized)) return false
+  if (/^[a-f0-9]{7,}$/i.test(normalized)) return false
+  return true
+}
+
 function toolCapabilityStatePath() {
   return path.join(process.cwd(), TOOL_CAPABILITY_STATE_FILE)
 }
@@ -733,12 +848,13 @@ function compactList(values: string[], limit: number) {
 
 function addCount(map: Map<string, number>, value: string, amount = 1) {
   const normalized = value.trim().replace(/\s+/g, ' ')
-  if (!normalized) return
+  if (!isUsefulCapabilityKeyword(normalized)) return
   map.set(normalized, (map.get(normalized) || 0) + amount)
 }
 
 function topEntries(map: Map<string, number>, limit: number): CapabilityEntry[] {
   return Array.from(map.entries())
+    .filter(([value]) => isUsefulCapabilityKeyword(value))
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, limit)
     .map(([value, count]) => ({ value, count }))
@@ -986,9 +1102,10 @@ async function buildCapabilityProfileForSource(sourceSlug: string, limit: number
     addTokenKeywords(keywordCounts, text)
     addCount(categoryCounts, row.categoryZh || row.category || '未分类')
 
-    const repo = githubRepoFromSkill(row)
+    const repo = githubPublishedRepoFromSkill(row)
     if (!repo) continue
-    const info = githubInfoFromRaw(row.rawData)
+    if (isPlaceholderGithubRepo(repo)) continue
+    const info = githubMetricsForPublishedRepo(row, repo)
     const current = repoCounts.get(repo) || {
       repo,
       count: 0,
@@ -1001,7 +1118,7 @@ async function buildCapabilityProfileForSource(sourceSlug: string, limit: number
     current.stars = Math.max(current.stars, toNumberValue(info.stars))
     current.forks = Math.max(current.forks, toNumberValue(info.forks))
     current.downloads = Math.max(current.downloads, toNumberValue(info.downloads))
-    current.sourceUrl = firstString(row.githubUrl, row.sourceUrl, current.sourceUrl)
+    current.sourceUrl = firstString(row.sourceUrl, githubRepoUrl(repo), current.sourceUrl)
     repoCounts.set(repo, current)
   }
 
@@ -1036,18 +1153,21 @@ async function buildCapabilityProfileForSource(sourceSlug: string, limit: number
     topicKeywords,
     toolHints: capabilityToolHints(sourceSlug, topKeywords),
     safeModeHints: capabilitySafeModeHints(sourceSlug),
-    sampleSkills: rows.slice(0, 12).map(row => {
-      const repo = githubRepoFromSkill(row)
-      const info = githubInfoFromRaw(row.rawData)
-      return {
-        id: row.id,
-        name: row.name,
-        repo,
-        sourceUrl: row.sourceUrl,
-        stars: toNumberValue(info.stars),
-        score: Math.max(row.heatScore || 0, row.qualityScore || 0),
-      }
-    }),
+    sampleSkills: rows
+      .map(row => {
+        const repo = githubPublishedRepoFromSkill(row)
+        const info = githubMetricsForPublishedRepo(row, repo)
+        return {
+          id: row.id,
+          name: row.name,
+          repo,
+          sourceUrl: row.sourceUrl,
+          stars: toNumberValue(info.stars),
+          score: Math.max(row.heatScore || 0, row.qualityScore || 0),
+        }
+      })
+      .filter(row => row.repo && !isPlaceholderGithubRepo(row.repo))
+      .slice(0, 12),
   }
 }
 
@@ -1078,6 +1198,33 @@ function topicKeywordsForSource(sourceSlug?: string | null) {
   ], 120)
 }
 
+function capabilityHistoryEntry(generatedAt: string, profiles: Record<string, ToolCapabilityProfile>): ToolCapabilityHistoryEntry {
+  const values = Object.values(profiles)
+  const historyProfiles = Object.fromEntries(values.map(profile => [
+    profile.sourceSlug,
+    {
+      sourceSlug: profile.sourceSlug,
+      label: profile.label,
+      skillCount: profile.skillCount,
+      activeSkillCount: profile.activeSkillCount,
+      repoCount: profile.repoCount,
+      queryCount: profile.queryCount,
+      keywordCount: profile.keywordCount,
+    },
+  ]))
+
+  return {
+    generatedAt,
+    totalProfiles: values.length,
+    totalSkills: values.reduce((sum, profile) => sum + Number(profile.skillCount || 0), 0),
+    totalActiveSkills: values.reduce((sum, profile) => sum + Number(profile.activeSkillCount || 0), 0),
+    totalRepos: values.reduce((sum, profile) => sum + Number(profile.repoCount || 0), 0),
+    totalQueries: values.reduce((sum, profile) => sum + Number(profile.queryCount || 0), 0),
+    totalKeywords: values.reduce((sum, profile) => sum + Number(profile.keywordCount || 0), 0),
+    profiles: historyProfiles,
+  }
+}
+
 function externalSkillMatchesTopic(row: {
   name?: string | null
   description?: string | null
@@ -1097,6 +1244,7 @@ function externalSkillMatchesTopic(row: {
 
   const repo = strictSource ? githubRepoFromSkill(row) : ''
   if (strictSource && !repo) return false
+  if (strictSource && isPlaceholderGithubRepo(repo)) return false
   if (strictSource && isAggregateSkillRepo(repo)) return false
   if (strictSource && hasExcludedKeyword(haystack, sourceSlug)) return false
   if (sourceSlug === 'github-python-crawler-skill-index') return matchesCrawlerCapabilityText(haystack)
@@ -1123,6 +1271,22 @@ function normalizeGithubRepoKey(value?: string | null) {
   return isGithubRepoKey(repo) ? repo : ''
 }
 
+function isPlaceholderGithubRepo(value?: string | null) {
+  const key = normalizeGithubRepoKey(value).toLowerCase()
+  if (!key) return true
+  return new Set([
+    'owner/repo',
+    'org/repo',
+    'user/repo',
+    'username/repo',
+    'example/repo',
+    'your/repo',
+    'your-org/repo',
+    'your-username/repo',
+    'github/repo',
+  ]).has(key)
+}
+
 function githubRepoUrl(repo?: string | null) {
   const key = normalizeGithubRepoKey(repo)
   return key ? `https://github.com/${key}` : ''
@@ -1145,16 +1309,37 @@ function isGithubRepoHomeUrl(value?: string | null) {
   }
 }
 
+function githubConcreteSourcePath(value?: string | null) {
+  if (!value) return ''
+  try {
+    const url = new URL(value)
+    if (!/^github\.com$/i.test(url.hostname)) return ''
+    const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent)
+    const marker = parts.findIndex(part => part === 'blob' || part === 'tree')
+    if (marker < 0 || parts.length <= marker + 2) return ''
+    return parts.slice(marker + 2).join('/')
+  } catch {
+    return ''
+  }
+}
+
+function isConcreteGithubSkillSourceUrl(value?: string | null) {
+  const sourcePath = githubConcreteSourcePath(value).toLowerCase()
+  if (!sourcePath) return false
+  const inSkillDirectory = /(^|\/)(skills?|agent-skills?|claude-skills?)(\/|$)/i.test(sourcePath)
+  const isSkillFile = /(^|\/)skill\.(md|mdx)$/i.test(sourcePath)
+  const isSkillNamedMarkdown = /(^|\/)[^/]*skill[^/]*\.(md|mdx)$/i.test(sourcePath)
+  const isReadmeLike = /(^|\/)(readme|license|contributing|changelog|security|code_of_conduct)\.(md|mdx)$/i.test(sourcePath)
+  if (isReadmeLike && !inSkillDirectory) return false
+  return isSkillFile || inSkillDirectory || isSkillNamedMarkdown
+}
+
 function isPreciseSkillSourceUrl(value?: string | null) {
   if (!value) return false
   try {
     const url = new URL(value)
     if (/^github\.com$/i.test(url.hostname)) {
-      const parts = url.pathname.split('/').filter(Boolean)
-      if (parts.length < 2) return false
-      if (parts.length === 2 && !url.hash) return false
-      if (parts.includes('blob') || parts.includes('tree')) return true
-      return Boolean(url.hash)
+      return isConcreteGithubSkillSourceUrl(value)
     }
     if (/officialskills\.sh$/i.test(url.hostname)) {
       return url.pathname.split('/').filter(Boolean).length >= 3
@@ -1162,7 +1347,7 @@ function isPreciseSkillSourceUrl(value?: string | null) {
     if (/skills\.sh$/i.test(url.hostname)) {
       return url.pathname.split('/').filter(Boolean).length >= 2
     }
-    return true
+    return false
   } catch {
     return false
   }
@@ -1249,28 +1434,15 @@ const skillCategoryMap: Array<{ categoryZh: string; keywords: string[] }> = [
 ]
 
 function semanticTags(tags: string[] = []) {
-  return tags
-    .map(tag => tag.trim())
-    .filter(tag => tag && !classificationNoiseTags.has(tag.toLowerCase()))
+  return semanticSkillTags(tags)
 }
 
 function classifySkillZh(text: string, fallback = '通用 Agent Skill') {
-  const value = text.toLowerCase()
-  return skillCategoryMap.find(item => item.keywords.some(keyword => value.includes(keyword)))?.categoryZh || fallback
+  return classifySkill({ name: text }, fallback).categoryZh
 }
 
 function translateTagsZh(tags: string[]) {
-  const values = new Set<string>()
-  for (const tag of semanticTags(tags)) {
-    const category = classifySkillZh(tag, '')
-    if (category) values.add(category)
-    if (/github/i.test(tag)) values.add('GitHub')
-    if (/api/i.test(tag)) values.add('API 调用')
-    if (/mcp/i.test(tag)) values.add('MCP')
-    if (/rag/i.test(tag)) values.add('RAG')
-    if (/agent/i.test(tag)) values.add('Agent')
-  }
-  return Array.from(values).slice(0, 8)
+  return classifySkill({ tags }).tagsZh
 }
 
 function classificationTextForExternalSkill(item: {
@@ -1298,6 +1470,43 @@ function classificationTextForExternalSkill(item: {
   return `${item.name} ${item.description || ''} ${semanticTags(tags).join(' ')}`
 }
 
+function classifyExternalSkillRow(item: {
+  name: string
+  description?: string | null
+  category?: string | null
+  tags?: string | null
+  sourceSlug?: string | null
+  sourceUrl?: string | null
+  githubUrl?: string | null
+  rawData?: string | null
+}) {
+  const raw = parseJson<Record<string, any>>(item.rawData, {})
+  const github = raw.github && typeof raw.github === 'object' ? raw.github : {}
+  return classifySkill({
+    name: item.name,
+    description: item.description,
+    category: item.category,
+    tags: splitList(item.tags),
+    sourceSlug: item.sourceSlug,
+    sourceUrl: item.sourceUrl,
+    githubUrl: firstString(item.githubUrl, raw.githubUrl, raw.github_url, github.url, github.repoUrl),
+    repo: firstString(
+      raw.originalRepo,
+      raw.sourceRepo,
+      raw.installRepo,
+      raw.repo,
+      raw.source,
+      github.originalRepo,
+      github.sourceRepo,
+      github.installRepo,
+      github.repo,
+    ),
+    path: firstString(raw.skillMdPath, raw.file, github.skillMdPath, github.skillPath),
+    rawData: raw,
+    capabilityKeywords: topicKeywordsForSource(item.sourceSlug).slice(0, 40),
+  }, firstString(item.category, '通用 Agent Skill'))
+}
+
 function isLowQualitySkillName(name: string) {
   const value = name.trim().toLowerCase()
   if (!value) return true
@@ -1306,6 +1515,7 @@ function isLowQualitySkillName(name: string) {
   if (name.startsWith('[')) return true
   if (/^20\d{2}-\d{2}-\d{2}$/.test(name)) return true
   if (/^\d+(\.\d+)*$/.test(name)) return true
+  if (/^[a-z]+:$/i.test(name)) return true
   if (/^https?:\/\//i.test(name)) return true
   if (/[\\/][^\\/]+\.(toml|json|ya?ml|md|txt|js|ts|tsx|jsx|py|sh)$/i.test(name)) return true
   if (/^\.?[a-z0-9_-]+\.(toml|json|ya?ml|md|txt|js|ts|tsx|jsx|py|sh)$/i.test(name)) return true
@@ -1334,6 +1544,19 @@ function isLowQualitySkillName(name: string) {
     'marketing',
     'document ops',
     'it ops',
+    'discord',
+    'issues',
+    'release announcements',
+    'detailed docs',
+    'smart recommendations',
+    'code generation',
+    'pre-delivery checks',
+    'design system generated',
+    'you ask',
+    'state management',
+    'story behind this skill',
+    'main',
+    'dev',
   ].includes(value)) return true
   if (/^(view all|learn more|read more|get started|copy|download|sign in|sign up)\b/i.test(name)) return true
   if (/ command reference$/i.test(name)) return true
@@ -1869,6 +2092,193 @@ async function cleanLowQualityExternalSkills() {
   }, null, 2))
 }
 
+type ExternalSkillQualityStatus = 'collected' | 'low_quality' | 'needs_source'
+
+type ExternalSkillQualityRow = {
+  id: number
+  name: string
+  sourceSlug: string
+  sourceUrl: string | null
+  githubUrl: string | null
+  homepageUrl?: string | null
+  downloadUrl?: string | null
+  status: string
+  rawData: string | null
+}
+
+function concreteSkillSourceUrlFromRow(row: ExternalSkillQualityRow) {
+  const raw = parseJson<Record<string, any>>(row.rawData, {})
+  const github = raw.github && typeof raw.github === 'object' ? raw.github : {}
+  return firstString(
+    row.sourceUrl && isConcreteGithubSkillSourceUrl(row.sourceUrl) ? row.sourceUrl : '',
+    raw.skillMdUrl && isConcreteGithubSkillSourceUrl(raw.skillMdUrl) ? raw.skillMdUrl : '',
+    github.skillMdUrl && isConcreteGithubSkillSourceUrl(github.skillMdUrl) ? github.skillMdUrl : '',
+    raw.githubUrl && isConcreteGithubSkillSourceUrl(raw.githubUrl) ? raw.githubUrl : '',
+    row.githubUrl && isConcreteGithubSkillSourceUrl(row.githubUrl) ? row.githubUrl : '',
+    row.sourceUrl && isPreciseSkillSourceUrl(row.sourceUrl) ? row.sourceUrl : '',
+  )
+}
+
+function externalSkillQualityDecision(row: ExternalSkillQualityRow): { status: ExternalSkillQualityStatus; reason: string; concreteSourceUrl?: string } {
+  const raw = parseJson<Record<string, any>>(row.rawData, {})
+  const parser = firstString(raw.parser, raw.collectorLabels?.parser)
+  const sourcePrecision = firstString(raw.sourcePrecision, raw.github?.sourcePrecision)
+  const sourceUrl = firstString(row.sourceUrl, raw.skillMdUrl, raw.github?.skillMdUrl, row.githubUrl, raw.githubUrl)
+  const concreteSourceUrl = concreteSkillSourceUrlFromRow(row)
+
+  if (isLowQualitySkillName(row.name)) return { status: 'low_quality', reason: 'generic or documentation-like skill name', concreteSourceUrl }
+  if (!githubRepoFromSkill(row)) return { status: 'needs_source', reason: 'missing resolvable GitHub owner/repo', concreteSourceUrl }
+  if (sourcePrecision === 'readme-anchor') return { status: 'low_quality', reason: 'README anchor/list item is not an original skill publish location', concreteSourceUrl }
+  if (parser === 'markdown-list' && !concreteSourceUrl) return { status: 'low_quality', reason: 'README list item has no concrete SKILL.md or skills directory URL', concreteSourceUrl }
+  if (sourceUrl && sourceUrl.includes('github.com') && !concreteSourceUrl) return { status: 'needs_source', reason: 'GitHub source is not a concrete skill file or directory', concreteSourceUrl }
+  if (!concreteSourceUrl && !sourceUrl.includes('github.com')) return { status: 'needs_source', reason: 'original GitHub skill publish URL is missing', concreteSourceUrl }
+  if (!isPreciseSkillSourceUrl(sourceUrl) && !concreteSourceUrl) return { status: 'needs_source', reason: 'source URL is not precise enough', concreteSourceUrl }
+  return { status: 'collected', reason: 'valid concrete GitHub skill source', concreteSourceUrl }
+}
+
+async function markExternalSkillDataQuality() {
+  const limit = Math.min(toInt(arg('--limit'), 100000), 500000)
+  const dryRun = hasFlag('--dry-run')
+  const rows = await prisma.externalSkill.findMany({
+    where: {
+      status: { in: ['collected', 'low_quality', 'needs_source'] },
+    },
+    take: limit,
+    orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+    select: {
+      id: true,
+      name: true,
+      sourceSlug: true,
+      sourceUrl: true,
+      githubUrl: true,
+      homepageUrl: true,
+      downloadUrl: true,
+      status: true,
+      rawData: true,
+    },
+  })
+
+  let updated = 0
+  const byStatus: Record<string, number> = {}
+  const samples: Array<{ id: number; from: string; to: string; name: string; reason: string; sourceUrl: string | null }> = []
+
+  for (const row of rows) {
+    const decision = externalSkillQualityDecision(row)
+    byStatus[decision.status] = (byStatus[decision.status] || 0) + 1
+    const nextStatus = decision.status
+    const raw = parseJson<Record<string, any>>(row.rawData, {})
+    const oldQuality = raw.dataQuality && typeof raw.dataQuality === 'object' ? raw.dataQuality : {}
+    const nextQuality = {
+      status: decision.status,
+      reason: decision.reason,
+      concreteSourceUrl: decision.concreteSourceUrl || undefined,
+    }
+    const oldComparableQuality = {
+      status: firstString(oldQuality.status),
+      reason: firstString(oldQuality.reason),
+      concreteSourceUrl: firstString(oldQuality.concreteSourceUrl) || undefined,
+    }
+    const qualityChanged = JSON.stringify(oldComparableQuality) !== JSON.stringify(nextQuality)
+    const nextRaw = {
+      ...raw,
+      dataQuality: {
+        ...nextQuality,
+        checkedAt: qualityChanged ? new Date().toISOString() : firstString(oldQuality.checkedAt) || undefined,
+      },
+    }
+    const nextSourceUrl = decision.concreteSourceUrl || row.sourceUrl
+    const shouldUpdate = row.status !== nextStatus || row.sourceUrl !== nextSourceUrl || qualityChanged
+    if (!shouldUpdate) continue
+    if (!dryRun) {
+      await prisma.externalSkill.update({
+        where: { id: row.id },
+        data: {
+          status: nextStatus,
+          publishedRef: nextStatus === 'collected' ? undefined : null,
+          sourceUrl: nextSourceUrl,
+          rawData: JSON.stringify(nextRaw),
+        },
+      })
+    }
+    updated++
+    if (samples.length < 30) {
+      samples.push({
+        id: row.id,
+        from: row.status,
+        to: nextStatus,
+        name: trim(row.name, 72),
+        reason: decision.reason,
+        sourceUrl: decision.concreteSourceUrl || row.sourceUrl,
+      })
+    }
+  }
+
+  const result = { ok: true, dryRun, scanned: rows.length, updated, byStatus, samples }
+  console.log(JSON.stringify(result, null, 2))
+  return result
+}
+
+function runNpmCommand(args: string[]) {
+  const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm'
+  const result = spawnSync(npmCommand, args, {
+    cwd: process.cwd(),
+    env: process.env,
+    stdio: 'inherit',
+  })
+  if (result.error) throw result.error
+  if (result.status && result.status !== 0) {
+    throw new Error(`npm ${args.join(' ')} failed with code ${result.status}`)
+  }
+}
+
+async function optimizeExternalSkillData() {
+  const skipGithubStars = hasFlag('--skip-github-stars')
+  const skipSkillSync = hasFlag('--skip-skill-sync')
+  const before = await externalSkillQualitySnapshot()
+
+  await backfillSkillSourceLinks()
+  await markExternalSkillDataQuality()
+  await backfillExternalSkillMetrics()
+  await reclassifyExternalSkills()
+  if (!skipGithubStars) await syncGithubRepoStars()
+
+  if (!skipSkillSync) {
+    const syncLimit = arg('--sync-limit', arg('--limit', '100000')) || '100000'
+    const syncRepoLimit = arg('--sync-repo-limit', '10000') || '10000'
+    runNpmCommand(['run', 'collector:sync-skills', '--', '--limit', syncLimit, '--repo-limit', syncRepoLimit])
+  }
+
+  const after = await externalSkillQualitySnapshot()
+  console.log(JSON.stringify({ ok: true, before, after, skipGithubStars, skipSkillSync }, null, 2))
+}
+
+async function externalSkillQualitySnapshot() {
+  const validWhere = { status: { notIn: ['ignored', 'low_quality', 'out_of_scope', 'needs_source', 'aggregated_source'] } }
+  const [total, valid, noStars, needsSource, lowQuality, aggregated, linked, skillResources, latest] = await Promise.all([
+    prisma.externalSkill.count(),
+    prisma.externalSkill.count({ where: validWhere }),
+    prisma.externalSkill.count({ where: { ...validWhere, stars: 0 } }),
+    prisma.externalSkill.count({ where: { status: 'needs_source' } }),
+    prisma.externalSkill.count({ where: { status: 'low_quality' } }),
+    prisma.externalSkill.count({ where: { status: 'aggregated_source' } }),
+    prisma.externalSkill.count({ where: { ...validWhere, publishedRef: { not: null } } }),
+    prisma.skillResource.count({ where: { sourceType: 'external-skill', isActive: true } }),
+    prisma.externalSkill.aggregate({ _max: { id: true, updatedAt: true } }),
+  ])
+  return {
+    total,
+    valid,
+    noStars,
+    needsSource,
+    lowQuality,
+    aggregated,
+    linked,
+    skillResources,
+    latestId: latest._max.id || 0,
+    latestUpdatedAt: latest._max.updatedAt?.toISOString() || null,
+  }
+}
+
 async function markStaleRuns() {
   const minutes = Math.max(toInt(arg('--minutes'), 30), 1)
   const cutoff = new Date(Date.now() - minutes * 60_000)
@@ -1900,9 +2310,13 @@ async function reclassifyExternalSkills() {
       id: true,
       name: true,
       description: true,
+      category: true,
       categoryZh: true,
       tags: true,
+      tagsZh: true,
       sourceSlug: true,
+      sourceUrl: true,
+      githubUrl: true,
       rawData: true,
     },
   })
@@ -1911,16 +2325,40 @@ async function reclassifyExternalSkills() {
   const samples: Array<{ id: number; source: string; name: string; from: string | null; to: string }> = []
 
   for (const item of rows) {
-    const tags = splitList(item.tags)
-    const newCategory = classifySkillZh(classificationTextForExternalSkill(item), '通用 Agent Skill')
-    const newTagsZh = translateTagsZh(tags).join(',')
-    if (newCategory === item.categoryZh && !newTagsZh) continue
+    const raw = parseJson<Record<string, any>>(item.rawData, {})
+    const classification = classifyExternalSkillRow(item)
+    const newCategory = classification.categoryZh
+    const newTagsZh = classification.tagsZh.join(',')
+    const nextClassifier = {
+      version: 1,
+      categoryZh: classification.categoryZh,
+      tagsZh: classification.tagsZh,
+      confidence: classification.confidence,
+      matchedKeywords: classification.matchedKeywords,
+      scoreDetail: classification.scoreDetail,
+      capabilityHints: classification.capabilityHints,
+    }
+    const oldClassifier = raw.skillClassifier && typeof raw.skillClassifier === 'object' ? raw.skillClassifier : {}
+    const comparableOldClassifier = { ...oldClassifier }
+    delete (comparableOldClassifier as Record<string, unknown>).classifiedAt
+    const classifierChanged = JSON.stringify(comparableOldClassifier) !== JSON.stringify(nextClassifier)
+    const nextRaw = {
+      ...raw,
+      skillClassifier: {
+        ...nextClassifier,
+        classifiedAt: classifierChanged
+          ? new Date().toISOString()
+          : firstString((oldClassifier as Record<string, unknown>).classifiedAt),
+      },
+    }
+    if (newCategory === item.categoryZh && newTagsZh === (item.tagsZh || '') && !classifierChanged) continue
 
     await prisma.externalSkill.update({
       where: { id: item.id },
       data: {
         categoryZh: newCategory,
         tagsZh: newTagsZh || undefined,
+        rawData: JSON.stringify(nextRaw),
       },
     })
     updated++
@@ -2315,7 +2753,7 @@ async function markTopicMismatchSkills() {
 }
 
 async function enrichGithubSkillMetadata() {
-  const source = arg('--source', 'skills-sh')
+  const source = arg('--source', '')
   const limit = Math.min(toInt(arg('--limit'), 5000), 100000)
   const repoLimit = Math.min(toInt(arg('--repo-limit'), 80), 1000)
   const releasePerRepo = Math.min(toInt(arg('--release-per-repo'), 20), 100)
@@ -2492,7 +2930,7 @@ async function runWithConcurrency<T>(items: T[], concurrency: number, worker: (i
 }
 
 async function syncGithubRepoStars() {
-  const source = arg('--source', 'skills-sh')
+  const source = arg('--source', '')
   const limit = Math.min(toInt(arg('--limit'), 50000), 300000)
   const repoLimit = Math.min(toInt(arg('--repo-limit'), 5000), 5000)
   const concurrency = Math.min(Math.max(toInt(arg('--concurrency'), 4), 1), 12)
@@ -2686,6 +3124,13 @@ async function buildToolCapabilityProfiles() {
     profiles[sourceSlug] = await buildCapabilityProfileForSource(sourceSlug, limit)
   }
 
+  const previousState = loadToolCapabilityState()
+  const previousHistory = Array.isArray(previousState?.history) ? previousState.history : []
+  const history = [
+    ...previousHistory,
+    capabilityHistoryEntry(generatedAt, profiles),
+  ].slice(-20)
+
   const state: ToolCapabilityState = {
     version: 1,
     generatedAt,
@@ -2699,6 +3144,7 @@ async function buildToolCapabilityProfiles() {
       ],
     },
     profiles,
+    history,
   }
 
   const statePath = toolCapabilityStatePath()
@@ -2728,6 +3174,273 @@ async function buildToolCapabilityProfiles() {
   }, null, 2))
 }
 
+async function buildKnowledgeVectorStore() {
+  const limit = Math.min(toInt(arg('--limit'), 30000), 200000)
+  const result = await buildKnowledgeVectors(prisma, { limit })
+  console.log(JSON.stringify(result, null, 2))
+}
+
+async function deepSeekGrowthPlan() {
+  const plan = await generateDeepSeekGrowthPlan(prisma)
+  console.log(JSON.stringify(plan, null, 2))
+}
+
+async function deepSeekGrowthDispatch() {
+  const knowledge = await buildKnowledgeVectors(prisma, { limit: Math.min(toInt(arg('--limit'), 50000), 200000) })
+  const plan = await generateDeepSeekGrowthPlan(prisma)
+  const commandMap: Record<string, string[]> = {
+    'build-tool-capability-profiles': ['run', 'collector:build-capabilities'],
+    'skills-sh-daemon': ['run', 'collector:batch-skills', '--', '--sources', 'skills-sh-search-index,skills-sh-github-sources,github-global-skill-index,github-python-crawler-skill-index,github-cybersecurity-skill-index', '--rounds', '3', '--delay-ms', '1500'],
+    'prompt-library-daemon': ['run', 'collector:prompts'],
+    'ai-news': ['run', 'collector:news'],
+    'prompt-library': ['run', 'collector:prompts'],
+    'skills-sh-search-index': ['run', 'collector:source', '--', 'skills-sh-search-index'],
+    'skills-sh-github-sources': ['run', 'collector:source', '--', 'skills-sh-github-sources'],
+    'github-index': ['run', 'collector:source', '--', 'github-global-skill-index'],
+    'github-full-skill-index': ['run', 'collector:batch-skills', '--', '--sources', 'github-global-skill-index,skills-sh-github-sources', '--rounds', '4', '--delay-ms', '1500'],
+    'github-python-crawler-skills': ['run', 'collector:source', '--', 'github-python-crawler-skill-index'],
+    'github-cybersecurity-skills': ['run', 'collector:source', '--', 'github-cybersecurity-skill-index'],
+    'sync-external-skills': ['run', 'collector:sync-skills', '--', '--limit', '50000', '--repo-limit', '5000'],
+    'optimize-skill-data': ['run', 'collector:admin', '--', 'optimize-external-skill-data', '--limit', '100000', '--repo-limit', '5000'],
+    'enrich-github-skill-metadata': ['run', 'collector:sync-github-stars', '--', '--limit', '100000', '--repo-limit', '5000', '--concurrency', '4'],
+    'reclassify-skills': ['run', 'collector:admin', '--', 'reclassify-external-skills', '--limit', '100000'],
+  }
+  const requested = plan.commands.map(command => command.commandId)
+  const fallback = ['skills-sh-search-index', 'prompt-library', 'ai-news']
+  const commands = Array.from(new Set([...requested, ...fallback]))
+    .filter(commandId => commandId !== 'build-knowledge-vectors' && commandId !== 'deepseek-growth-plan')
+    .slice(0, 6)
+  const results: Array<{ commandId: string; exitCode: number | null; stdout: string; stderr: string }> = []
+
+  for (const commandId of commands) {
+    const npmArgs = commandMap[commandId]
+    if (!npmArgs) continue
+    const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm'
+    const child = spawnSync(npmCommand, npmArgs, {
+      cwd: process.cwd(),
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+      encoding: 'utf8',
+      windowsHide: true,
+      timeout: 120000,
+    })
+    results.push({
+      commandId,
+      exitCode: child.status,
+      stdout: trim(child.stdout || '', 4000),
+      stderr: trim(child.stderr || '', 4000),
+    })
+  }
+
+  console.log(JSON.stringify({
+    ok: true,
+    knowledge,
+    plan,
+    dispatched: results,
+  }, null, 2))
+}
+
+function deploymentPackageAbsolutePath(value?: string | null) {
+  if (!value) return ''
+  return path.isAbsolute(value) ? value : path.join(process.cwd(), value)
+}
+
+function runDeployStep(label: string, command: string, args: string[], options: { optional?: boolean; cwd?: string } = {}) {
+  console.log(`[deploy] ${label}: ${command} ${args.join(' ')}`)
+  const isWindowsCommandShim = process.platform === 'win32' && /\.(cmd|bat)$/i.test(command)
+  const child = isWindowsCommandShim ? spawnSync('cmd.exe', ['/d', '/s', '/c', command, ...args], {
+    cwd: options.cwd || process.cwd(),
+    env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+    encoding: 'utf8',
+    windowsHide: true,
+    timeout: 20 * 60 * 1000,
+  }) : spawnSync(command, args, {
+    cwd: options.cwd || process.cwd(),
+    env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+    encoding: 'utf8',
+    windowsHide: true,
+    timeout: 20 * 60 * 1000,
+  })
+  if (child.stdout) console.log(child.stdout.trim())
+  if (child.stderr) console.error(child.stderr.trim())
+  if (child.error && !options.optional) {
+    throw new Error(`${label} failed: ${child.error.message}`)
+  }
+  if (child.status !== 0 && !options.optional) {
+    throw new Error(`${label} failed with exit code ${child.status}`)
+  }
+  return child.status || 0
+}
+
+async function extractDeployPackage(packagePath: string, extractDir: string) {
+  await fs.rm(extractDir, { recursive: true, force: true })
+  await fs.mkdir(extractDir, { recursive: true })
+  const lower = packagePath.toLowerCase()
+  if (lower.endsWith('.zip')) {
+    if (process.platform === 'win32') {
+      runDeployStep('extract zip', 'powershell.exe', [
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-Command',
+        `Expand-Archive -LiteralPath ${JSON.stringify(packagePath)} -DestinationPath ${JSON.stringify(extractDir)} -Force`,
+      ])
+    } else {
+      runDeployStep('extract zip', 'unzip', ['-q', packagePath, '-d', extractDir])
+    }
+    return
+  }
+  if (lower.endsWith('.tar') || lower.endsWith('.tgz') || lower.endsWith('.tar.gz')) {
+    runDeployStep('extract tar', 'tar', ['-xf', packagePath, '-C', extractDir])
+    return
+  }
+  throw new Error('Unsupported deployment package format.')
+}
+
+async function detectDeployRoot(extractDir: string) {
+  const entries = await fs.readdir(extractDir, { withFileTypes: true })
+  const hasPackageJson = entries.some(entry => entry.isFile() && entry.name === 'package.json')
+  const directories = entries.filter(entry => entry.isDirectory())
+  if (!hasPackageJson && directories.length === 1) return path.join(extractDir, directories[0].name)
+  return extractDir
+}
+
+function shouldSkipDeployPath(relativePath: string) {
+  const normalized = relativePath.replace(/\\/g, '/')
+  const parts = normalized.split('/').filter(Boolean)
+  const first = parts[0] || ''
+  if (!first) return false
+  if ([
+    '.git',
+    '.next',
+    '.collector-state',
+    '.venv',
+    '.venv-scrapling',
+    'node_modules',
+    'exports',
+    'dev-server.combined.log',
+    'dev-server.err.log',
+    'dev-server.out.log',
+  ].includes(first)) return true
+  if (first === '.env' || first === '.env.local') return true
+  if (/^\.env\./.test(first)) return true
+  if (normalized.includes('/.collector-state/')) return true
+  if (normalized.includes('/node_modules/')) return true
+  return false
+}
+
+async function copyDeployTree(sourceRoot: string, targetRoot: string) {
+  const resolvedTarget = path.resolve(targetRoot)
+
+  async function walk(currentSource: string) {
+    const relative = path.relative(sourceRoot, currentSource)
+    if (relative && shouldSkipDeployPath(relative)) return
+    const currentTarget = path.resolve(targetRoot, relative)
+    if (currentTarget !== resolvedTarget && !currentTarget.startsWith(`${resolvedTarget}${path.sep}`)) {
+      throw new Error(`Refusing to copy outside project root: ${currentTarget}`)
+    }
+    const stat = await fs.lstat(currentSource)
+    if (stat.isSymbolicLink()) return
+    if (stat.isDirectory()) {
+      await fs.mkdir(currentTarget, { recursive: true })
+      const entries = await fs.readdir(currentSource)
+      for (const entry of entries) {
+        await walk(path.join(currentSource, entry))
+      }
+      return
+    }
+    if (stat.isFile()) {
+      await fs.mkdir(path.dirname(currentTarget), { recursive: true })
+      await fs.copyFile(currentSource, currentTarget)
+    }
+  }
+
+  await walk(sourceRoot)
+}
+
+async function deploymentCounts() {
+  const [skillCount, externalSkillCount, promptCount, newsCount] = await Promise.all([
+    prisma.skillResource.count().catch(() => 0),
+    prisma.externalSkill.count().catch(() => 0),
+    prisma.collectionCandidate.count({ where: { type: 'prompt' } }).catch(() => 0),
+    prisma.collectionCandidate.count({ where: { type: 'news' } }).catch(() => 0),
+  ])
+  return { skillCount, externalSkillCount, promptCount, newsCount }
+}
+
+async function applyLatestDeployPackage() {
+  const requestedVersion = arg('--version', '')
+  const versionRow = requestedVersion
+    ? await prisma.skillLibraryVersion.findUnique({ where: { version: requestedVersion } })
+    : await prisma.skillLibraryVersion.findFirst({
+      where: { status: { in: ['queued', 'uploaded', 'failed'] } },
+      orderBy: { id: 'desc' },
+    })
+
+  if (!versionRow) {
+    console.log(JSON.stringify({ ok: true, skipped: true, reason: 'No queued deployment package.' }, null, 2))
+    return
+  }
+
+  const packagePath = deploymentPackageAbsolutePath(versionRow.packagePath)
+  if (!packagePath || !existsSync(packagePath)) {
+    throw new Error(`Deployment package not found: ${versionRow.packagePath || '-'}`)
+  }
+
+  const startedAt = new Date()
+  await prisma.skillLibraryVersion.update({
+    where: { id: versionRow.id },
+    data: { status: 'deploying', startedAt },
+  })
+
+  const tempRoot = path.join(process.cwd(), '.collector-state', 'deploy-work', `version-${versionRow.version.replace(/[^0-9a-z.-]/gi, '-')}`)
+  try {
+    await extractDeployPackage(packagePath, tempRoot)
+    const sourceRoot = await detectDeployRoot(tempRoot)
+    console.log(`[deploy] source root: ${sourceRoot}`)
+    await copyDeployTree(sourceRoot, process.cwd())
+
+    const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm'
+    const npxCommand = process.platform === 'win32' ? 'npx.cmd' : 'npx'
+    runDeployStep('install dependencies', npmCommand, ['install'])
+    runDeployStep('sync database schema', npxCommand, ['prisma', 'db', 'push'])
+    runDeployStep('generate Prisma client', npmCommand, ['run', 'db:generate'])
+    runDeployStep('build collector UI', npmCommand, ['run', 'collector:build-ui'])
+
+    if (existsSync(path.join(process.cwd(), 'ecosystem.config.cjs'))) {
+      const pm2Command = process.platform === 'win32' ? 'pm2.cmd' : 'pm2'
+      runDeployStep('reload pm2 services', pm2Command, ['startOrReload', 'ecosystem.config.cjs', '--update-env'], { optional: true })
+      runDeployStep('save pm2 process list', pm2Command, ['save'], { optional: true })
+    } else {
+      console.log('[deploy] ecosystem.config.cjs not found; skipping PM2 reload.')
+    }
+
+    const counts = await deploymentCounts()
+    const updated = await prisma.skillLibraryVersion.update({
+      where: { id: versionRow.id },
+      data: {
+        status: 'success',
+        finishedAt: new Date(),
+        notes: versionRow.notes,
+        ...counts,
+      },
+    })
+    await fs.rm(tempRoot, { recursive: true, force: true }).catch(() => undefined)
+    console.log(JSON.stringify({ ok: true, version: updated.version, status: updated.status, counts }, null, 2))
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Deployment failed.'
+    await prisma.skillLibraryVersion.update({
+      where: { id: versionRow.id },
+      data: {
+        status: 'failed',
+        finishedAt: new Date(),
+        notes: `${versionRow.notes ? `${versionRow.notes}\n` : ''}部署失败：${message}`,
+      },
+    }).catch(() => undefined)
+    console.error(`[deploy] failed: ${message}`)
+    throw error
+  }
+}
+
 async function main() {
   const command = process.argv[2] || 'stats'
   if (command === 'stats') await stats()
@@ -2739,6 +3452,8 @@ async function main() {
   else if (command === 'status') await setStatus()
   else if (command === 'clean-wrong-skills') await cleanWrongSkills()
   else if (command === 'clean-low-quality-external-skills') await cleanLowQualityExternalSkills()
+  else if (command === 'mark-external-skill-data-quality') await markExternalSkillDataQuality()
+  else if (command === 'optimize-external-skill-data') await optimizeExternalSkillData()
   else if (command === 'mark-stale-runs') await markStaleRuns()
   else if (command === 'reclassify-external-skills') await reclassifyExternalSkills()
   else if (command === 'backfill-external-skill-metrics') await backfillExternalSkillMetrics()
@@ -2750,6 +3465,10 @@ async function main() {
   else if (command === 'purge-external-skills-without-github') await purgeExternalSkillsWithoutGithubRepo()
   else if (command === 'mark-topic-mismatch-skills') await markTopicMismatchSkills()
   else if (command === 'build-tool-capability-profiles') await buildToolCapabilityProfiles()
+  else if (command === 'build-knowledge-vectors') await buildKnowledgeVectorStore()
+  else if (command === 'deepseek-growth-plan') await deepSeekGrowthPlan()
+  else if (command === 'deepseek-growth-dispatch') await deepSeekGrowthDispatch()
+  else if (command === 'apply-latest-deploy-package') await applyLatestDeployPackage()
   else if (hasFlag('--help')) help()
   else {
     help()
@@ -2769,13 +3488,18 @@ Collector admin commands:
   npm run collector:admin -- status --id 123 --status ignored --note "low quality"
   npm run collector:clean-skills
   npm run collector:admin -- clean-low-quality-external-skills
+  npm run collector:admin -- mark-external-skill-data-quality --limit 100000
+  npm run collector:admin -- optimize-external-skill-data --limit 100000 --repo-limit 5000
   npm run collector:admin -- mark-stale-runs --minutes 10
   npm run collector:admin -- reclassify-external-skills --source skills-sh --limit 10000
   npm run collector:admin -- backfill-external-skill-metrics --limit 100000
   npm run collector:admin -- backfill-skill-source-links --source skills-sh --limit 50000
-  npm run collector:admin -- enrich-github-skill-metadata --source skills-sh --limit 20000 --repo-limit 300
-  npm run collector:admin -- sync-github-repo-stars --source skills-sh --limit 50000 --repo-limit 5000 --concurrency 4
+  npm run collector:admin -- enrich-github-skill-metadata --limit 100000 --repo-limit 5000
+  npm run collector:admin -- sync-github-repo-stars --limit 100000 --repo-limit 5000 --concurrency 4
   npm run collector:admin -- build-tool-capability-profiles --limit 20000
+  npm run collector:admin -- build-knowledge-vectors --limit 30000
+  npm run collector:admin -- deepseek-growth-plan
+  npm run collector:admin -- deepseek-growth-dispatch
   npm run collector:admin -- mark-imprecise-skill-sources --limit 100000
   npm run collector:admin -- purge-external-skills-without-github --limit 300000
 `)
