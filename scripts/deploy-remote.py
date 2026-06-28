@@ -167,6 +167,8 @@ def main():
         run(client, f"cd {REMOTE_APP} && npm install --no-audit --no-fund", timeout=1800)
         log("prisma db push (no schema change expected; safe)")
         run(client, f"cd {REMOTE_APP} && npx prisma db push --skip-generate", check=False, timeout=600)
+        log("generating Prisma client")
+        run(client, f"cd {REMOTE_APP} && npm run db:generate", timeout=600)
         log("building collector UI")
         run(client, f"cd {REMOTE_APP} && npm run collector:build-ui", timeout=1800)
         log("reloading PM2 services")
