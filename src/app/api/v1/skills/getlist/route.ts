@@ -20,6 +20,7 @@ const DEFAULT_AI_DESCRIPTION_LIMIT = 20
 const MAX_AI_DESCRIPTION_LIMIT = 80
 const DEFAULT_FETCH_MISSING_MARKDOWN_LIMIT = 0
 const MAX_FETCH_MISSING_MARKDOWN_LIMIT = 80
+const MAX_SKILL_MARKDOWN_RESPONSE_CHARS = 120_000
 const SKILL_CRAWLER_TOKEN_ENV = 'SKILL_CRAWLER_API_TOKEN'
 
 type SyncSkillStatus = 'published' | 'unlisted' | 'archived' | 'deleted'
@@ -1382,11 +1383,33 @@ async function buildChineseDescription(
 function hasStoredApiReadyData(group: DedupeGroup) {
   const markdown = storedMarkdown(group.meta.raw)
   if (!markdown) return false
+  if (!isLikelySkillMarkdown(group.row, group.meta, markdown)) return false
   const rawStoredSkillSummary = firstString(group.meta.raw.skillMdDescription, group.meta.github.skillMdDescription)
   const nameKey = slugToken(firstString(group.row.name, group.row.slug, group.meta.raw.name, group.meta.raw.title))
   const storedSkillSummary = slugToken(rawStoredSkillSummary) && slugToken(rawStoredSkillSummary) === nameKey ? '' : rawStoredSkillSummary
   const summary = normalizeSummaryDescription(extractSkillMarkdownSummary(markdown) || storedSkillSummary, group.meta)
   return Boolean(summary)
+}
+
+function isLikelySkillMarkdown(row: SyncSkillRow, meta: ReturnType<typeof githubMetadata>, markdown: string) {
+  if (!markdown) return false
+  const source = firstString(meta.raw.skillMdUrl, meta.github.skillMdUrl, row.sourceUrl, row.githubUrl, meta.sourceUrl)
+  const sourcePath = githubSkillPathFromUrl(source)
+  if (/(^|\/)skill\.md$/i.test(sourcePath) || /(^|\/)skill\.md([?#].*)?$/i.test(source)) return true
+  return /^---\s*[\s\S]{0,1200}\bname\s*:/i.test(markdown) &&
+    /^---\s*[\s\S]{0,1200}\bdescription\s*:/i.test(markdown)
+}
+
+function skillMarkdownForResponse(markdown: string) {
+  if (!markdown) return { markdown: '', truncated: false, length: 0 }
+  if (markdown.length <= MAX_SKILL_MARKDOWN_RESPONSE_CHARS) {
+    return { markdown, truncated: false, length: markdown.length }
+  }
+  return {
+    markdown: `${markdown.slice(0, MAX_SKILL_MARKDOWN_RESPONSE_CHARS)}\n\n<!-- skill_markdown truncated by API response limit -->`,
+    truncated: true,
+    length: markdown.length,
+  }
 }
 
 async function mapWithConcurrency<T, R>(items: T[], concurrency: number, mapper: (item: T, index: number) => Promise<R>) {
@@ -1530,6 +1553,18 @@ export async function GET(request: NextRequest) {
   if (starThreshold !== null) {
     where.stars = { gt: starThreshold }
   }
+  if (verifiedOnly) {
+    where.AND = [
+      {
+        OR: [
+          { rawData: { contains: 'skillMarkdown' } },
+          { rawData: { contains: 'skill_markdown' } },
+          { rawData: { contains: 'skillMdMarkdown' } },
+          { rawData: { contains: '"markdown"' } },
+        ],
+      },
+    ]
+  }
 
   try {
     const rows = await prisma.externalSkill.findMany({
@@ -1578,10 +1613,12 @@ export async function GET(request: NextRequest) {
       const savedMarkdown = storedMarkdown(meta.raw)
       const canFetchMissing = !savedMarkdown && fetchMissingMarkdown && index < fetchMissingMarkdownLimit
       const fetchedMarkdown = canFetchMissing ? await fetchMarkdown(meta.skillMdRawUrl) : ''
-      const actualSkillMarkdown = savedMarkdown || fetchedMarkdown
-      const skillMarkdown = actualSkillMarkdown
+      const rawSkillMarkdown = savedMarkdown || fetchedMarkdown
+      const actualSkillMarkdown = isLikelySkillMarkdown(row, meta, rawSkillMarkdown) ? rawSkillMarkdown : ''
+      const responseMarkdown = skillMarkdownForResponse(actualSkillMarkdown)
+      const skillMarkdown = responseMarkdown.markdown
       if (!skillMarkdown && verifiedOnly) return null
-      if (!savedMarkdown && fetchedMarkdown) await persistSkillMarkdown(row, meta, fetchedMarkdown)
+      if (!savedMarkdown && actualSkillMarkdown) await persistSkillMarkdown(row, meta, actualSkillMarkdown)
 
       const description = await buildChineseDescription(row, meta, actualSkillMarkdown, {
         useAi: useAiDescriptions && index < aiDescriptionLimit,
@@ -1617,6 +1654,8 @@ export async function GET(request: NextRequest) {
         categories,
         tags,
         skill_markdown: skillMarkdown || null,
+        skill_markdown_length: responseMarkdown.length,
+        skill_markdown_truncated: responseMarkdown.truncated,
         markdown_verified: Boolean(skillMarkdown),
         verification_status: skillMarkdown ? 'verified_skill_markdown' : 'source_only',
         status: syncStatus(row.status),
