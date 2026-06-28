@@ -115,11 +115,12 @@ function githubTargetFromUrl(value) {
     if (/^raw\.githubusercontent\.com$/i.test(url.hostname)) {
       const parts2 = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
       if (parts2.length < 4) return null;
+      const sourcePath = parts2.slice(3).join("/");
       return {
         owner: parts2[0],
         repo: parts2[1],
         ref: parts2[2],
-        filePath: parts2.slice(3).join("/")
+        filePath: skillMarkdownPathFromSourcePath(sourcePath)
       };
     }
     if (!/^github\.com$/i.test(url.hostname)) return null;
@@ -127,16 +128,28 @@ function githubTargetFromUrl(value) {
     const marker = parts.findIndex((part) => part === "blob" || part === "tree");
     if (marker < 0 || parts.length <= marker + 2) return null;
     const sourcePath = parts.slice(marker + 2).join("/");
-    const filePath = parts[marker] === "blob" || /(^|\/)skill\.md$/i.test(sourcePath) ? sourcePath : `${sourcePath.replace(/\/+$/g, "")}/SKILL.md`;
     return {
       owner: parts[0],
       repo: parts[1],
       ref: parts[marker + 1],
-      filePath
+      filePath: skillMarkdownPathFromSourcePath(sourcePath)
     };
   } catch {
     return null;
   }
+}
+function isSkillMarkdownPath(value) {
+  return /(^|\/)skill\.md([?#].*)?$/i.test(String(value || "").trim());
+}
+function skillMarkdownPathFromSourcePath(value) {
+  const sourcePath = String(value || "").split(/[?#]/)[0].replace(/\/+$/g, "");
+  if (!sourcePath) return "SKILL.md";
+  if (isSkillMarkdownPath(sourcePath)) return sourcePath;
+  if (/\.md$/i.test(sourcePath)) {
+    const dir = sourcePath.split("/").slice(0, -1).join("/");
+    return dir ? `${dir}/SKILL.md` : "SKILL.md";
+  }
+  return `${sourcePath}/SKILL.md`;
 }
 function githubBlobUrl(repo, ref, filePath) {
   return `https://github.com/${repo}/blob/${encodeURIComponent(ref)}/${filePath.split("/").map(encodeURIComponent).join("/")}`;
@@ -188,7 +201,7 @@ function candidateTargets(row, raw) {
       owner,
       repo: repoName,
       ref: defaultBranch,
-      filePath: /(^|\/)skill\.md$/i.test(skillPath) || /\.md$/i.test(skillPath) ? skillPath : `${skillPath.replace(/\/+$/g, "")}/SKILL.md`
+      filePath: skillMarkdownPathFromSourcePath(skillPath)
     });
   }
   const expanded = [];
@@ -279,6 +292,13 @@ function isValidSkillMarkdown(markdown, summary) {
 }
 function hasValidStoredMarkdown(raw) {
   const github = raw.github && typeof raw.github === "object" ? raw.github : {};
+  const storedUrl = firstString(
+    raw.skillMdUrl,
+    raw.skillUrl,
+    github.skillMdUrl,
+    github.url
+  );
+  if (storedUrl && !isSkillMarkdownPath(storedUrl)) return false;
   const markdown = firstString(
     raw.skillMarkdown,
     raw.skill_markdown,
@@ -326,6 +346,7 @@ async function fetchText(url, accept, timeoutMs) {
 }
 async function fetchMarkdownForRow(row, raw, timeoutMs) {
   for (const target of candidateTargets(row, raw)) {
+    if (!isSkillMarkdownPath(target.filePath)) continue;
     const repo = `${target.owner}/${target.repo}`;
     const apiUrl = contentsApiUrl(repo, target.ref, target.filePath);
     const apiText = await fetchText(apiUrl, "application/vnd.github.raw", timeoutMs);

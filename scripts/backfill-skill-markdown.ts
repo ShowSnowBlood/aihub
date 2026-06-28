@@ -166,11 +166,12 @@ function githubTargetFromUrl(value?: string | null): GithubTarget | null {
     if (/^raw\.githubusercontent\.com$/i.test(url.hostname)) {
       const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent)
       if (parts.length < 4) return null
+      const sourcePath = parts.slice(3).join('/')
       return {
         owner: parts[0],
         repo: parts[1],
         ref: parts[2],
-        filePath: parts.slice(3).join('/'),
+        filePath: skillMarkdownPathFromSourcePath(sourcePath),
       }
     }
 
@@ -179,19 +180,31 @@ function githubTargetFromUrl(value?: string | null): GithubTarget | null {
     const marker = parts.findIndex(part => part === 'blob' || part === 'tree')
     if (marker < 0 || parts.length <= marker + 2) return null
     const sourcePath = parts.slice(marker + 2).join('/')
-    const filePath = parts[marker] === 'blob' || /(^|\/)skill\.md$/i.test(sourcePath)
-      ? sourcePath
-      : `${sourcePath.replace(/\/+$/g, '')}/SKILL.md`
 
     return {
       owner: parts[0],
       repo: parts[1],
       ref: parts[marker + 1],
-      filePath,
+      filePath: skillMarkdownPathFromSourcePath(sourcePath),
     }
   } catch {
     return null
   }
+}
+
+function isSkillMarkdownPath(value?: string | null) {
+  return /(^|\/)skill\.md([?#].*)?$/i.test(String(value || '').trim())
+}
+
+function skillMarkdownPathFromSourcePath(value: string) {
+  const sourcePath = String(value || '').split(/[?#]/)[0].replace(/\/+$/g, '')
+  if (!sourcePath) return 'SKILL.md'
+  if (isSkillMarkdownPath(sourcePath)) return sourcePath
+  if (/\.md$/i.test(sourcePath)) {
+    const dir = sourcePath.split('/').slice(0, -1).join('/')
+    return dir ? `${dir}/SKILL.md` : 'SKILL.md'
+  }
+  return `${sourcePath}/SKILL.md`
 }
 
 function githubBlobUrl(repo: string, ref: string, filePath: string) {
@@ -249,9 +262,7 @@ function candidateTargets(row: SkillRow, raw: Record<string, any>) {
       owner,
       repo: repoName,
       ref: defaultBranch,
-      filePath: /(^|\/)skill\.md$/i.test(skillPath) || /\.md$/i.test(skillPath)
-        ? skillPath
-        : `${skillPath.replace(/\/+$/g, '')}/SKILL.md`,
+      filePath: skillMarkdownPathFromSourcePath(skillPath),
     })
   }
 
@@ -373,6 +384,13 @@ function isValidSkillMarkdown(markdown: string, summary: string) {
 
 function hasValidStoredMarkdown(raw: Record<string, any>) {
   const github = raw.github && typeof raw.github === 'object' ? raw.github : {}
+  const storedUrl = firstString(
+    raw.skillMdUrl,
+    raw.skillUrl,
+    github.skillMdUrl,
+    github.url,
+  )
+  if (storedUrl && !isSkillMarkdownPath(storedUrl)) return false
   const markdown = firstString(
     raw.skillMarkdown,
     raw.skill_markdown,
@@ -424,6 +442,7 @@ async function fetchText(url: string, accept: string, timeoutMs: number) {
 
 async function fetchMarkdownForRow(row: SkillRow, raw: Record<string, any>, timeoutMs: number): Promise<MarkdownResult | null> {
   for (const target of candidateTargets(row, raw)) {
+    if (!isSkillMarkdownPath(target.filePath)) continue
     const repo = `${target.owner}/${target.repo}`
     const apiUrl = contentsApiUrl(repo, target.ref, target.filePath)
     const apiText = await fetchText(apiUrl, 'application/vnd.github.raw', timeoutMs)
