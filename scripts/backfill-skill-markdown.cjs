@@ -424,6 +424,8 @@ async function main() {
   const timeoutMs = Math.max(3e3, toInt(arg("--timeout-ms"), DEFAULT_TIMEOUT_MS));
   const sourceSlug = arg("--source");
   const minStars = Math.max(0, toInt(arg("--min-stars"), 0));
+  const offset = Math.max(0, toInt(arg("--offset"), 0));
+  const order = String(arg("--order", "priority") || "priority").toLowerCase();
   const refresh = hasFlag("--refresh");
   const where = {
     status: {
@@ -434,7 +436,8 @@ async function main() {
   if (minStars > 0) where.stars = { gte: minStars };
   const rows = await prisma.externalSkill.findMany({
     where,
-    orderBy: [{ stars: "desc" }, { downloads: "desc" }, { id: "asc" }],
+    orderBy: order === "id" ? [{ id: "asc" }] : [{ stars: "desc" }, { downloads: "desc" }, { id: "asc" }],
+    skip: offset,
     take: Math.min(Math.max(limit * 8, limit), 1e5),
     select: {
       id: true,
@@ -504,6 +507,8 @@ async function main() {
   console.log(JSON.stringify({
     ok: true,
     tokenUsed: Boolean(process.env.GITHUB_TOKEN),
+    order,
+    offset,
     scanned,
     queued: queue.length,
     attempted,

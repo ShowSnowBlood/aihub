@@ -1565,7 +1565,8 @@ function isLikelySkillMarkdown(row: SyncSkillRow, meta: ReturnType<typeof github
   if (!markdown) return false
   const source = firstString(meta.raw.skillMdUrl, meta.github.skillMdUrl, row.sourceUrl, row.githubUrl, meta.sourceUrl)
   const sourcePath = githubSkillPathFromUrl(source)
-  if (/(^|\/)skill\.md$/i.test(sourcePath) || /(^|\/)skill\.md([?#].*)?$/i.test(source)) return true
+  const sourceIsSkillMd = /(^|\/)skill\.md$/i.test(sourcePath) || /(^|\/)skill\.md([?#].*)?$/i.test(source)
+  if (!sourceIsSkillMd) return false
   return /^---\s*[\s\S]{0,1200}\bname\s*:/i.test(markdown) &&
     /^---\s*[\s\S]{0,1200}\bdescription\s*:/i.test(markdown)
 }
