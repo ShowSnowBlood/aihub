@@ -21,7 +21,83 @@ const MAX_AI_DESCRIPTION_LIMIT = 80
 const DEFAULT_FETCH_MISSING_MARKDOWN_LIMIT = 0
 const MAX_FETCH_MISSING_MARKDOWN_LIMIT = 80
 const MAX_SKILL_MARKDOWN_RESPONSE_CHARS = 120_000
+const GOOGLE_TRANSLATE_TIMEOUT_MS = 2500
+const CATEGORY_TRANSLATION_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000
 const SKILL_CRAWLER_TOKEN_ENV = 'SKILL_CRAWLER_API_TOKEN'
+
+const CATEGORY_ZH_BY_KEY: Record<string, string> = {
+  'crawler-data-collection': '爬虫采集与数据获取',
+  'security-audit-research': '安全审计与攻防研究',
+  'github-open-source': 'GitHub 开源项目',
+  'rag-knowledge-base': 'RAG 与知识库',
+  'prompt-role-template': '提示词与角色模板',
+  'frontend-ui-engineering': '前端与界面工程',
+  'code-engineering-automation': '代码开发与工程自动化',
+  'data-analysis-processing': '数据分析与表格处理',
+  'multimodal-creative': '设计与多模态创作',
+  'ai-news-research': 'AI 资讯与研究跟踪',
+  'devops-cloud': '运维部署与云平台',
+  'agent-workflow-tools': 'Agent 工作流与工具调用',
+  'content-writing': '内容写作与知识表达',
+  'growth-operations': '产品运营与增长',
+  'learning-research': '学习研究与课程',
+  'general-agent-skill': '通用 Agent Skill',
+  'research': '研究分析',
+  'news': 'AI 资讯',
+  'content': '内容写作',
+  'github': 'GitHub 开源',
+  'data': '数据处理',
+  'rag': 'RAG 与知识库',
+  'engineering': '工程开发',
+  'automation': '自动化工作流',
+  'planning': '规划与项目管理',
+  'evaluation': '评测与质量验证',
+  'agent': 'AI Agent',
+  'operations': '运营管理',
+  'governance': '治理与合规',
+  'creative': '创意设计',
+  'education': '学习教育',
+  'prompt': '提示词工程',
+  'skill': 'Skill 技能',
+}
+
+const CATEGORY_SLUG_BY_ZH: Record<string, string> = {
+  '爬虫采集与数据获取': 'crawler-data-collection',
+  '安全审计与攻防研究': 'security-audit-research',
+  '安全审计与防护研究': 'security-audit-research',
+  'GitHub 开源项目': 'github-open-source',
+  'GitHub 开源项目分析': 'github-open-source',
+  'GitHub 仓库与开源项目分析': 'github-open-source',
+  'RAG 与知识库': 'rag-knowledge-base',
+  '提示词与角色模板': 'prompt-role-template',
+  '前端与界面工程': 'frontend-ui-engineering',
+  '代码开发与工程自动化': 'code-engineering-automation',
+  '数据分析与表格处理': 'data-analysis-processing',
+  '设计与多模态创作': 'multimodal-creative',
+  'AI 资讯与研究跟踪': 'ai-news-research',
+  '运维部署与云平台': 'devops-cloud',
+  'Agent 工作流与工具调用': 'agent-workflow-tools',
+  '内容写作与知识表达': 'content-writing',
+  '产品运营与增长': 'growth-operations',
+  '学习研究与课程': 'learning-research',
+  '通用 Agent Skill': 'general-agent-skill',
+  '研究分析': 'research',
+  'AI 资讯': 'news',
+  '内容写作': 'content',
+  'GitHub 开源': 'github',
+  '数据处理': 'data',
+  '工程开发': 'engineering',
+  '自动化工作流': 'automation',
+  '规划与项目管理': 'planning',
+  '评测与质量验证': 'evaluation',
+  'AI Agent': 'agent',
+  '运营管理': 'operations',
+  '治理与合规': 'governance',
+  '创意设计': 'creative',
+  '学习教育': 'education',
+  '提示词工程': 'prompt',
+  'Skill 技能': 'skill',
+}
 
 type SyncSkillStatus = 'published' | 'unlisted' | 'archived' | 'deleted'
 type SourceType = 'github' | 'official' | 'site' | 'other'
@@ -95,6 +171,7 @@ const globalRateState = globalThis as unknown as {
   skillCrawlerReadmeCache?: Map<string, CacheEntry<ReadmeResult>>
   skillCrawlerReadmePromiseCache?: Map<string, Promise<ReadmeResult>>
   skillCrawlerDescriptionCache?: Map<string, CacheEntry<DescriptionResult>>
+  skillCrawlerCategoryTranslationCache?: Map<string, CacheEntry<string>>
 }
 
 if (!globalRateState.skillCrawlerApiRateBuckets) {
@@ -108,6 +185,9 @@ if (!globalRateState.skillCrawlerReadmePromiseCache) {
 }
 if (!globalRateState.skillCrawlerDescriptionCache) {
   globalRateState.skillCrawlerDescriptionCache = new Map()
+}
+if (!globalRateState.skillCrawlerCategoryTranslationCache) {
+  globalRateState.skillCrawlerCategoryTranslationCache = new Map()
 }
 
 function jsonError(status: number, code: string, message: string) {
@@ -301,6 +381,10 @@ function includesAny(value: string, terms: string[]) {
 }
 
 function categorySlug(value: string) {
+  const cleaned = cleanDisplayText(value)
+  const mappedZh = CATEGORY_SLUG_BY_ZH[cleaned]
+  if (mappedZh) return mappedZh
+
   if (includesAny(value, ['scrapling', 'scrapy', 'crawler', 'scraper', 'spider', 'firecrawl', 'crawl4ai', '\u722c\u866b', '\u91c7\u96c6', '\u6293\u53d6'])) {
     return 'crawler-data-collection'
   }
@@ -346,7 +430,93 @@ function categorySlug(value: string) {
   if (includesAny(value, ['learning', 'course', 'education', 'tutorial', '\u5b66\u4e60', '\u8bfe\u7a0b', '\u6559\u7a0b'])) {
     return 'learning-research'
   }
-  return slugToken(value)
+  return slugToken(cleaned)
+}
+
+function categoryKey(value: string) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[_\s/]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+}
+
+function humanizeCategory(value: string) {
+  return String(value || '')
+    .trim()
+    .replace(/[_/-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\bai\b/gi, 'AI')
+    .replace(/\brag\b/gi, 'RAG')
+    .replace(/\bgithub\b/gi, 'GitHub')
+    .replace(/\bdevops\b/gi, 'DevOps')
+    .replace(/\bllm\b/gi, 'LLM')
+    .trim()
+}
+
+async function googleTranslateToChinese(value: string) {
+  const sourceText = humanizeCategory(value)
+  if (!sourceText || hasChinese(sourceText)) return sourceText
+
+  const cacheKey = categoryKey(sourceText)
+  const cache = globalRateState.skillCrawlerCategoryTranslationCache!
+  const cached = cachedValue(cache, cacheKey)
+  if (cached) return cached
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), GOOGLE_TRANSLATE_TIMEOUT_MS)
+  try {
+    const url = new URL('https://translate.googleapis.com/translate_a/single')
+    url.searchParams.set('client', 'gtx')
+    url.searchParams.set('sl', 'auto')
+    url.searchParams.set('tl', 'zh-CN')
+    url.searchParams.set('dt', 't')
+    url.searchParams.set('q', sourceText)
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 AIHub Collector',
+      },
+    })
+    if (!response.ok) return sourceText
+    const payload = await response.json()
+    const translated = Array.isArray(payload?.[0])
+      ? payload[0].map((part: unknown) => Array.isArray(part) ? String(part[0] || '') : '').join('')
+      : ''
+    const normalized = cleanDisplayText(translated) || sourceText
+    setCachedValue(cache, cacheKey, normalized, CATEGORY_TRANSLATION_CACHE_TTL_MS)
+    return normalized
+  } catch {
+    return sourceText
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+async function categoryZh(value: string) {
+  const cleaned = cleanDisplayText(value)
+  if (!cleaned) return '未分类'
+  if (hasChinese(cleaned)) return cleaned
+
+  const key = categoryKey(cleaned)
+  const mapped = CATEGORY_ZH_BY_KEY[key] || CATEGORY_ZH_BY_KEY[humanizeCategory(cleaned).toLowerCase()]
+  if (mapped) return mapped
+
+  return googleTranslateToChinese(cleaned)
+}
+
+async function categoryZhList(values: string[]) {
+  const result: string[] = []
+  const seen = new Set<string>()
+  for (const value of values) {
+    const translated = await categoryZh(value)
+    const key = categoryKey(translated)
+    if (!translated || seen.has(key)) continue
+    seen.add(key)
+    result.push(translated)
+  }
+  return result.length ? result : ['通用 Agent Skill']
 }
 
 function tagSlug(value: string) {
@@ -1644,7 +1814,8 @@ export async function GET(request: NextRequest) {
       const descriptionText = description.text || fallbackDescription
       if (!descriptionText && verifiedOnly) return null
 
-      const categories = syncCategories(row, meta)
+      const categorySlugs = syncCategories(row, meta)
+      const categories = await categoryZhList(categorySlugs)
       const tags = syncTags(row, meta)
       return {
         slug: displayName,
@@ -1661,6 +1832,7 @@ export async function GET(request: NextRequest) {
         install_command: meta.installGitUrl ? `codex skills install ${meta.installGitUrl}` : null,
         install_count: Math.max(meta.installCount, group.installCount),
         github_stars: Math.max(meta.stars, group.githubStars),
+        category_slugs: categorySlugs,
         categories,
         tags,
         skill_markdown: skillMarkdown || null,

@@ -47,7 +47,7 @@ const noiseTags = new Set([
 
 const sourceCategoryHints: Array<[string, string]> = [
   ['github-python-crawler-skill-index', '爬虫采集与数据获取'],
-  ['github-cybersecurity-skill-index', '安全审计与防护研究'],
+  ['github-cybersecurity-skill-index', '安全审计与攻防研究'],
 ]
 
 const rules: Rule[] = [
@@ -93,8 +93,8 @@ const rules: Rule[] = [
     ],
   },
   {
-    categoryZh: '安全审计与防护研究',
-    tags: ['安全', '审计', '元数据研究'],
+    categoryZh: '安全审计与攻防研究',
+    tags: ['安全', '审计', '攻防研究'],
     weight: 27,
     strong: [
       'shannon',
@@ -136,8 +136,8 @@ const rules: Rule[] = [
     ],
   },
   {
-    categoryZh: 'GitHub 仓库与开源项目分析',
-    tags: ['GitHub', '开源项目', '仓库画像'],
+    categoryZh: 'GitHub 开源项目分析',
+    tags: ['GitHub', '开源项目', '仓库分析'],
     weight: 18,
     strong: ['github api', 'github search', 'github trending', 'star history', 'repository analysis'],
     keywords: ['github repo', 'repository', 'stars', 'forks', 'release', 'license', 'topic', 'commit', 'pull request', '仓库', '开源项目', '榜单', 'Star 增长'],
@@ -282,6 +282,15 @@ function collectRawText(raw: Record<string, any>) {
   ].filter(Boolean).join(' ')
 }
 
+function keywordMatches(text: string, keyword: string) {
+  const normalized = normalize(keyword)
+  if (!normalized) return false
+  if (/^[a-z0-9+#. -]+$/.test(normalized)) {
+    return new RegExp(`(^|[^a-z0-9+#])${normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z0-9+#]|$)`, 'i').test(text)
+  }
+  return text.includes(normalized)
+}
+
 function skillText(input: SkillClassificationInput) {
   const raw = parseJson(input.rawData)
   const tags = semanticSkillTags(splitSkillTags(input.tags))
@@ -303,15 +312,6 @@ function skillText(input: SkillClassificationInput) {
     baseText,
     matchedCapabilityKeywords.join(' '),
   ].filter(Boolean).join(' '))
-}
-
-function keywordMatches(text: string, keyword: string) {
-  const normalized = normalize(keyword)
-  if (!normalized) return false
-  if (/^[a-z0-9+#. -]+$/.test(normalized)) {
-    return new RegExp(`(^|[^a-z0-9+#])${normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z0-9+#]|$)`, 'i').test(text)
-  }
-  return text.includes(normalized)
 }
 
 export function classifySkill(input: SkillClassificationInput, fallback = '通用 Agent Skill'): SkillClassificationResult {
