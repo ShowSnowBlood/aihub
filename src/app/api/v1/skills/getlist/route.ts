@@ -1603,7 +1603,7 @@ export async function GET(request: NextRequest) {
     const filteredGroups = starThreshold === null
       ? allGroups
       : allGroups.filter(group => Math.max(group.meta.stars, group.githubStars) > starThreshold)
-    const verifiedGroups = filteredGroups.filter(hasStoredApiReadyData)
+    const verifiedGroups = verifiedOnly ? filteredGroups.filter(hasStoredApiReadyData) : []
     const apiGroups = verifiedOnly ? verifiedGroups : filteredGroups
     const start = (page - 1) * limit
     const buildResponseItem = async (group: DedupeGroup, index: number) => {
@@ -1698,7 +1698,7 @@ export async function GET(request: NextRequest) {
       total_raw_with_github_repo: groupedRawRows,
       total_raw_without_github_repo: rows.length - groupedRawRows,
       total: apiGroups.length,
-      total_verified: verifiedGroups.length,
+      total_verified: verifiedOnly ? verifiedGroups.length : null,
       total_before_markdown_filter: filteredGroups.length,
       total_before_star_filter: starThreshold === null ? allGroups.length : null,
       deduped: groupedRawRows - allGroups.length,
