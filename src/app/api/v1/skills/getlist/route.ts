@@ -1563,6 +1563,16 @@ export async function GET(request: NextRequest) {
           { rawData: { contains: '"markdown"' } },
         ],
       },
+      {
+        OR: [
+          { sourceUrl: { contains: 'SKILL.md' } },
+          { sourceUrl: { contains: 'skill.md' } },
+          { githubUrl: { contains: 'SKILL.md' } },
+          { githubUrl: { contains: 'skill.md' } },
+          { rawData: { contains: 'SKILL.md' } },
+          { rawData: { contains: 'skill.md' } },
+        ],
+      },
     ]
   }
 
