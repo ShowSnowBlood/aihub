@@ -1527,6 +1527,9 @@ export async function GET(request: NextRequest) {
       lte: to,
     }
   }
+  if (starThreshold !== null) {
+    where.stars = { gt: starThreshold }
+  }
 
   try {
     const rows = await prisma.externalSkill.findMany({
@@ -1658,9 +1661,16 @@ export async function GET(request: NextRequest) {
       total: apiGroups.length,
       total_verified: verifiedGroups.length,
       total_before_markdown_filter: filteredGroups.length,
-      total_before_star_filter: allGroups.length,
+      total_before_star_filter: starThreshold === null ? allGroups.length : null,
       deduped: groupedRawRows - allGroups.length,
-      star_filter: starThreshold === null ? null : { field: 'github_stars', operator: '>', value: starThreshold },
+      star_filter: starThreshold === null ? null : {
+        field: 'github_stars',
+        operator: '>',
+        value: starThreshold,
+        prefilter: 'external_skills.stars',
+      },
+      date_filter_enabled: hasDateFilter,
+      date_field: dateFieldParam.apiField,
       sync_window: {
         from_date: fromDateParam || null,
         to_date: toDateParam || null,
