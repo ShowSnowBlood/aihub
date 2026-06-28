@@ -55,6 +55,11 @@ function toInt(value: string | undefined, fallback: number) {
   return Number.isFinite(parsed) ? Math.floor(parsed) : fallback
 }
 
+function toNumber(value: string | undefined, fallback: number) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
 function parseEnvValue(value: string) {
   const trimmed = value.trim()
   if (
@@ -404,6 +409,14 @@ function hasValidStoredMarkdown(raw: Record<string, any>) {
   return isValidSkillMarkdown(markdown, extractSkillSummary(markdown))
 }
 
+function hasRecentFailure(raw: Record<string, any>, skipRecentFailureMs: number) {
+  if (skipRecentFailureMs <= 0) return false
+  const lastErrorAt = firstString(raw.skillMarkdownLastErrorAt)
+  if (!lastErrorAt) return false
+  const timestamp = Date.parse(lastErrorAt)
+  return Number.isFinite(timestamp) && Date.now() - timestamp < skipRecentFailureMs
+}
+
 function githubHeaders(accept = 'application/vnd.github.raw') {
   const headers: Record<string, string> = {
     Accept: accept,
@@ -485,6 +498,11 @@ async function runWithConcurrency<T>(items: T[], concurrency: number, worker: (i
 async function updateRow(row: SkillRow, result: MarkdownResult) {
   const raw = parseJson(row.rawData)
   const github = raw.github && typeof raw.github === 'object' ? raw.github : {}
+  const {
+    skillMarkdownLastError,
+    skillMarkdownLastErrorAt,
+    ...rawWithoutFailure
+  } = raw
   const summary = extractSkillSummary(result.markdown)
   const frontMatter = parseFrontMatterFields(result.markdown)
   const now = new Date().toISOString()
@@ -504,7 +522,7 @@ async function updateRow(row: SkillRow, result: MarkdownResult) {
       descriptionZh: isMostlyChinese(summary) ? summary : row.descriptionZh,
       sourceUrl: result.url,
       rawData: JSON.stringify({
-        ...raw,
+        ...rawWithoutFailure,
         name: nameFromMarkdown || raw.name,
         skillMdUrl: result.url,
         skillMdRawUrl: result.rawUrl,
@@ -524,6 +542,22 @@ async function updateRow(row: SkillRow, result: MarkdownResult) {
   })
 }
 
+async function recordMarkdownFailure(row: SkillRow, reason: string) {
+  const raw = parseJson(row.rawData)
+  const attemptCount = Number(raw.skillMarkdownAttemptCount || 0)
+  await prisma.externalSkill.update({
+    where: { id: row.id },
+    data: {
+      rawData: JSON.stringify({
+        ...raw,
+        skillMarkdownAttemptCount: Number.isFinite(attemptCount) ? attemptCount + 1 : 1,
+        skillMarkdownLastErrorAt: new Date().toISOString(),
+        skillMarkdownLastError: cleanText(reason).slice(0, 240) || 'SKILL.md not found',
+      }),
+    },
+  })
+}
+
 async function main() {
   const limit = Math.max(1, toInt(arg('--limit'), DEFAULT_LIMIT))
   const concurrency = Math.max(1, Math.min(toInt(arg('--concurrency'), DEFAULT_CONCURRENCY), 12))
@@ -532,6 +566,7 @@ async function main() {
   const minStars = Math.max(0, toInt(arg('--min-stars'), 0))
   const offset = Math.max(0, toInt(arg('--offset'), 0))
   const order = String(arg('--order', 'priority') || 'priority').toLowerCase()
+  const skipRecentFailureMs = Math.max(0, toNumber(arg('--skip-recent-failure-mins'), 0)) * 60 * 1000
   const refresh = hasFlag('--refresh')
 
   const where: any = {
@@ -567,7 +602,11 @@ async function main() {
   })
 
   const queue = rows
-    .filter(row => refresh || !hasValidStoredMarkdown(parseJson(row.rawData)))
+    .filter(row => {
+      if (refresh) return true
+      const raw = parseJson(row.rawData)
+      return !hasValidStoredMarkdown(raw) && !hasRecentFailure(raw, skipRecentFailureMs)
+    })
     .slice(0, limit)
 
   let scanned = rows.length
@@ -582,6 +621,7 @@ async function main() {
     try {
       const result = await fetchMarkdownForRow(row, raw, timeoutMs)
       if (!result) {
+        await recordMarkdownFailure(row, 'SKILL.md not found')
         failed += 1
         if (samples.length < 20) samples.push({ id: row.id, name: row.name, sourceUrl: row.sourceUrl, error: 'SKILL.md not found' })
         return
@@ -601,6 +641,7 @@ async function main() {
         console.log(JSON.stringify({ stage: 'backfill-skill-markdown', attempted, updated, failed }))
       }
     } catch (error) {
+      await recordMarkdownFailure(row, error instanceof Error ? error.message : 'unknown error')
       failed += 1
       if (samples.length < 20) {
         samples.push({
@@ -627,6 +668,7 @@ async function main() {
     tokenUsed: Boolean(process.env.GITHUB_TOKEN),
     order,
     offset,
+    skipRecentFailureMins: Math.round(skipRecentFailureMs / 60 / 1000),
     scanned,
     queued: queue.length,
     attempted,
