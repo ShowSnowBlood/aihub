@@ -34,7 +34,7 @@ DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-pro")
 
 # Directories/files excluded from the upload tarball.
 EXCLUDE_DIRS = {
-    "node_modules", ".next", ".git", ".venv-scrapling", ".collector-state",
+    "node_modules", ".next", ".next-deploy", ".git", ".venv-scrapling", ".collector-state",
     "exports", "logs", "docs", "__pycache__",
 }
 EXCLUDE_SUFFIX = (".log", ".tar.gz", ".zip", ".tsbuildinfo", ".csv", ".docx", ".jsonl")
