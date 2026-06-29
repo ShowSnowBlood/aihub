@@ -598,6 +598,13 @@ function githubCloneUrl(repo?: string | null) {
   return normalized ? `https://github.com/${normalized}.git` : ''
 }
 
+function githubTreeUrl(owner: string, repo: string, ref?: string, dir?: string) {
+  const root = `https://github.com/${owner}/${repo.replace(/\.git$/i, '')}`
+  const cleanDir = String(dir || '').replace(/^\/+|\/+$/g, '')
+  if (!ref || !cleanDir) return root
+  return `${root}/tree/${encodeURIComponent(ref)}/${cleanDir.split('/').map(encodeURIComponent).join('/')}`
+}
+
 function githubSkillInstallUrlFromSource(value?: string | null) {
   if (!value) return ''
   try {
@@ -605,22 +612,67 @@ function githubSkillInstallUrlFromSource(value?: string | null) {
     if (/^raw\.githubusercontent\.com$/i.test(url.hostname)) {
       const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent)
       if (parts.length < 4) return ''
-      const skillDir = parts.slice(3).join('/').replace(/\/SKILL\.md$/i, '')
-      if (!skillDir || skillDir === parts.slice(3).join('/')) return ''
-      return `https://github.com/${parts[0]}/${parts[1]}/tree/${encodeURIComponent(parts[2])}/${skillDir.split('/').map(encodeURIComponent).join('/')}`
+      const sourcePath = parts.slice(3).join('/')
+      if (!/(^|\/)skill\.md$/i.test(sourcePath)) return ''
+      const skillDir = sourcePath.split('/').slice(0, -1).join('/')
+      return githubTreeUrl(parts[0], parts[1], parts[2], skillDir)
     }
 
     if (!/^github\.com$/i.test(url.hostname)) return ''
     const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent)
+    if (parts.length < 2) return ''
+    if (parts.length >= 2 && !parts[2]) return githubTreeUrl(parts[0], parts[1])
     const marker = parts.findIndex(part => part === 'blob' || part === 'tree')
-    if (marker < 0 || parts.length <= marker + 2) return ''
+    if (marker < 0 || parts.length <= marker + 2) return githubTreeUrl(parts[0], parts[1])
     const sourcePath = parts.slice(marker + 2).join('/')
-    const skillDir = sourcePath.replace(/\/SKILL\.md$/i, '')
-    if (!skillDir || skillDir === sourcePath) return ''
-    return `https://github.com/${parts[0]}/${parts[1]}/tree/${encodeURIComponent(parts[marker + 1])}/${skillDir.split('/').map(encodeURIComponent).join('/')}`
+    const skillDir = /(^|\/)skill\.md$/i.test(sourcePath)
+      ? sourcePath.split('/').slice(0, -1).join('/')
+      : parts[marker] === 'tree'
+        ? sourcePath
+        : ''
+    if (!skillDir && !/(^|\/)skill\.md$/i.test(sourcePath)) return githubTreeUrl(parts[0], parts[1])
+    return githubTreeUrl(parts[0], parts[1], parts[marker + 1], skillDir)
   } catch {
     return ''
   }
+}
+
+function normalizeNpxSkillsTarget(value?: string | null) {
+  const text = firstString(value)
+  if (!text) return ''
+  try {
+    const url = new URL(text)
+    if (!/^github\.com$/i.test(url.hostname)) return text
+    const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent)
+    if (parts.length < 2) return ''
+    const owner = parts[0]
+    const repo = parts[1].replace(/\.git$/i, '')
+    const rest = parts.slice(2)
+    const pathSuffix = rest.length ? `/${rest.map(encodeURIComponent).join('/')}` : ''
+    return `https://github.com/${owner}/${repo}${pathSuffix}`
+  } catch {
+    return text.replace(/\.git$/i, '')
+  }
+}
+
+function isSpecificSkillInstallTarget(value?: string | null) {
+  if (!value) return false
+  try {
+    const url = new URL(value)
+    if (!/^github\.com$/i.test(url.hostname)) return false
+    const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent)
+    const marker = parts.findIndex(part => part === 'blob' || part === 'tree')
+    if (marker < 0 || parts.length <= marker + 2) return false
+    const sourcePath = parts.slice(marker + 2).join('/')
+    return Boolean(sourcePath && !/(^|\/)skill\.md$/i.test(sourcePath))
+  } catch {
+    return false
+  }
+}
+
+function cliArg(value: string) {
+  if (/^[A-Za-z0-9_./:@%+=,-]+$/.test(value)) return value
+  return `"${value.replace(/(["\\$`])/g, '\\$1')}"`
 }
 
 function githubBlobToRawUrl(value?: string | null) {
@@ -845,6 +897,23 @@ function githubMetadata(row: {
     skillMdUrl,
     skillMdRawUrl,
   }
+}
+
+function npxSkillInstallCommand(meta: ReturnType<typeof githubMetadata>, displayName: string) {
+  const directTarget = normalizeNpxSkillsTarget(githubSkillInstallUrlFromSource(firstString(
+    meta.skillMdUrl,
+    meta.sourceUrl,
+    meta.skillMdRawUrl,
+  )))
+  const target = directTarget || normalizeNpxSkillsTarget(firstString(meta.installGitUrl, meta.repoUrl))
+  if (!target) return null
+
+  const command = ['npx', 'skills', 'add', cliArg(target)]
+  const shouldPinSkillName = !isSpecificSkillInstallTarget(target) && /^[A-Za-z0-9_.:-]{1,128}$/.test(displayName)
+  if (shouldPinSkillName) {
+    command.push('--skill', cliArg(displayName))
+  }
+  return command.join(' ')
 }
 
 function sourceType(row: { sourceSlug?: string | null; sourceUrl?: string | null; githubUrl?: string | null; homepageUrl?: string | null }, repo: string): SourceType {
@@ -1927,7 +1996,7 @@ export async function GET(request: NextRequest) {
         author_name: row.author || firstString(meta.raw.author, meta.raw.owner, meta.github.owner) || null,
         source_type: sourceType(row, meta.repo),
         source_url: meta.sourceUrl || null,
-        install_command: meta.installGitUrl ? `codex skills install ${meta.installGitUrl}` : null,
+        install_command: npxSkillInstallCommand(meta, displayName),
         install_count: Math.max(meta.installCount, hydratedGroup.installCount),
         github_stars: Math.max(meta.stars, hydratedGroup.githubStars),
         category_slugs: categorySlugs,
