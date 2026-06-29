@@ -134,14 +134,41 @@ type SyncSkillRow = {
   updatedAt: Date
 }
 
+const syncSkillBaseSelect = {
+  id: true,
+  slug: true,
+  name: true,
+  description: true,
+  descriptionZh: true,
+  author: true,
+  category: true,
+  categoryZh: true,
+  tags: true,
+  tagsZh: true,
+  sourceSlug: true,
+  sourceUrl: true,
+  githubUrl: true,
+  homepageUrl: true,
+  downloadUrl: true,
+  status: true,
+  qualityScore: true,
+  heatScore: true,
+  stars: true,
+  downloads: true,
+  fingerprint: true,
+  collectedAt: true,
+  updatedAt: true,
+} as const
+
+const syncSkillFullSelect = {
+  ...syncSkillBaseSelect,
+  rawData: true,
+} as const
+
 type DedupeGroup = {
   key: string
   row: SyncSkillRow
   meta: ReturnType<typeof githubMetadata>
-  rows: Array<{
-    row: SyncSkillRow
-    meta: ReturnType<typeof githubMetadata>
-  }>
   repo: string
   duplicateCount: number
   githubStars: number
@@ -1036,7 +1063,6 @@ function dedupeSyncRows(rows: SyncSkillRow[]) {
         key,
         row,
         meta,
-        rows: [{ row, meta }],
         repo,
         duplicateCount: 1,
         githubStars: meta.stars,
@@ -1047,7 +1073,6 @@ function dedupeSyncRows(rows: SyncSkillRow[]) {
     }
 
     current.duplicateCount += 1
-    current.rows.push({ row, meta })
     current.githubStars = Math.max(current.githubStars, meta.stars)
     current.installCount = Math.max(current.installCount, meta.installCount)
     current.updatedAt = row.updatedAt > current.updatedAt ? row.updatedAt : current.updatedAt
@@ -1483,6 +1508,8 @@ async function persistSkillMarkdown(row: SyncSkillRow, meta: ReturnType<typeof g
         descriptionZh: isMostlyChinese(summary) ? summary : row.descriptionZh,
         rawData: JSON.stringify({
           ...raw,
+          apiReady: true,
+          apiReadyVerifiedAt: now,
           skillMarkdown: markdown,
           skillMdDescription: summary,
           skillMarkdownFetchedAt: now,
@@ -1708,6 +1735,37 @@ function parseVerifiedOnly(searchParams: URLSearchParams) {
   return !['0', 'false', 'off', 'no', 'all'].includes(raw.trim().toLowerCase())
 }
 
+function lightRowWithEmptyRawData(row: Omit<SyncSkillRow, 'rawData'>): SyncSkillRow {
+  return {
+    ...row,
+    rawData: null,
+  }
+}
+
+function mergeDedupeGroupWithRow(group: DedupeGroup, row: SyncSkillRow): DedupeGroup {
+  const meta = githubMetadata(row)
+  const repo = canonicalRepoKey(row, meta) || group.repo
+  return {
+    ...group,
+    row,
+    meta,
+    repo,
+    githubStars: Math.max(group.githubStars, meta.stars),
+    installCount: Math.max(group.installCount, meta.installCount),
+    updatedAt: row.updatedAt > group.updatedAt ? row.updatedAt : group.updatedAt,
+  }
+}
+
+async function hydrateDedupeGroup(group: DedupeGroup) {
+  const row = await prisma.externalSkill.findUnique({
+    where: { id: group.row.id },
+    select: syncSkillFullSelect,
+  }) as SyncSkillRow | null
+
+  if (!row) return null
+  return mergeDedupeGroupWithRow(group, row)
+}
+
 export async function GET(request: NextRequest) {
   if (!isAuthorized(request)) {
     return jsonError(401, 'unauthorized', 'Bearer token is missing or invalid')
@@ -1776,12 +1834,7 @@ export async function GET(request: NextRequest) {
   if (verifiedOnly) {
     where.AND = [
       {
-        OR: [
-          { rawData: { contains: 'skillMarkdown' } },
-          { rawData: { contains: 'skill_markdown' } },
-          { rawData: { contains: 'skillMdMarkdown' } },
-          { rawData: { contains: '"markdown"' } },
-        ],
+        rawData: { contains: '"apiReady":true' },
       },
       {
         OR: [
@@ -1797,48 +1850,27 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const rows = await prisma.externalSkill.findMany({
+    const lightRows = await prisma.externalSkill.findMany({
       where,
       orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }],
-      select: {
-        id: true,
-        slug: true,
-        name: true,
-        description: true,
-        descriptionZh: true,
-        author: true,
-        category: true,
-        categoryZh: true,
-        tags: true,
-        tagsZh: true,
-        sourceSlug: true,
-        sourceUrl: true,
-        githubUrl: true,
-        homepageUrl: true,
-        downloadUrl: true,
-        status: true,
-        qualityScore: true,
-        heatScore: true,
-        stars: true,
-        downloads: true,
-        rawData: true,
-        fingerprint: true,
-        collectedAt: true,
-        updatedAt: true,
-      },
-    }) as SyncSkillRow[]
+      select: syncSkillBaseSelect,
+    })
+    const rows = lightRows.map(row => lightRowWithEmptyRawData(row as Omit<SyncSkillRow, 'rawData'>))
 
     const allGroups = sortDedupeGroups(dedupeSyncRows(rows))
     const groupedRawRows = allGroups.reduce((sum, group) => sum + group.duplicateCount, 0)
     const filteredGroups = starThreshold === null
       ? allGroups
       : allGroups.filter(group => Math.max(group.meta.stars, group.githubStars) > starThreshold)
-    const verifiedGroups = verifiedOnly ? filteredGroups.filter(hasStoredApiReadyData) : []
+    const verifiedGroups = verifiedOnly ? filteredGroups : []
     const apiGroups = verifiedOnly ? verifiedGroups : filteredGroups
     const start = (page - 1) * limit
     const buildResponseItem = async (group: DedupeGroup, index: number) => {
-      const row = group.row
-      const meta = group.meta
+      const hydratedGroup = await hydrateDedupeGroup(group)
+      if (!hydratedGroup) return null
+
+      const row = hydratedGroup.row
+      const meta = hydratedGroup.meta
       const displayName = skillDisplayName(row, meta)
       const savedMarkdown = storedMarkdown(meta.raw)
       const canFetchMissing = !savedMarkdown && fetchMissingMarkdown && index < fetchMissingMarkdownLimit
@@ -1870,8 +1902,8 @@ export async function GET(request: NextRequest) {
       return {
         slug: displayName,
         name: displayName,
-        repo: group.repo,
-        repo_url: meta.repoUrl || `https://github.com/${group.repo}`,
+        repo: hydratedGroup.repo,
+        repo_url: meta.repoUrl || `https://github.com/${hydratedGroup.repo}`,
         description: descriptionText,
         description_source: description.text ? description.source : 'fallback',
         description_readme_url: description.readmeUrl || null,
@@ -1880,8 +1912,8 @@ export async function GET(request: NextRequest) {
         source_type: sourceType(row, meta.repo),
         source_url: meta.sourceUrl || null,
         install_command: meta.installGitUrl ? `codex skills install ${meta.installGitUrl}` : null,
-        install_count: Math.max(meta.installCount, group.installCount),
-        github_stars: Math.max(meta.stars, group.githubStars),
+        install_count: Math.max(meta.installCount, hydratedGroup.installCount),
+        github_stars: Math.max(meta.stars, hydratedGroup.githubStars),
         category_slugs: categorySlugs,
         categories,
         tags,
@@ -1892,7 +1924,7 @@ export async function GET(request: NextRequest) {
         verification_status: skillMarkdown ? 'verified_skill_markdown' : 'source_only',
         status: syncStatus(row.status),
         collected_at: row.collectedAt.toISOString(),
-        updated_at: group.updatedAt.toISOString(),
+        updated_at: hydratedGroup.updatedAt.toISOString(),
       }
     }
 

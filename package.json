@@ -40,6 +40,7 @@
     "collector:enrich-github-skills": "tsx scripts/collector-admin.ts enrich-github-skill-metadata",
     "collector:sync-github-stars": "tsx scripts/collector-admin.ts sync-github-repo-stars",
     "collector:backfill-skill-links": "tsx scripts/backfill-skill-original-links.ts",
+    "collector:mark-api-ready-skills": "tsx scripts/mark-api-ready-skills.ts",
     "collector:build-capabilities": "tsx scripts/collector-admin.ts build-tool-capability-profiles",
     "collector:build-knowledge": "tsx scripts/collector-admin.ts build-knowledge-vectors",
     "collector:deepseek-plan": "tsx scripts/collector-admin.ts deepseek-growth-plan",

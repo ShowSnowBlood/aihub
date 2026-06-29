@@ -523,6 +523,9 @@ async function updateRow(row: SkillRow, result: MarkdownResult) {
       sourceUrl: result.url,
       rawData: JSON.stringify({
         ...rawWithoutFailure,
+        apiReady: true,
+        apiReadyVerifiedAt: now,
+        apiReadyVersion: 1,
         name: nameFromMarkdown || raw.name,
         skillMdUrl: result.url,
         skillMdRawUrl: result.rawUrl,
