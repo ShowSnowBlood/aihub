@@ -1094,6 +1094,21 @@ function sortDedupeGroups(groups: DedupeGroup[]) {
   })
 }
 
+function dedupeGroupsByDisplayName(groups: DedupeGroup[]) {
+  const seen = new Set<string>()
+  const output: DedupeGroup[] = []
+
+  for (const group of groups) {
+    const nameKey = slugToken(skillDisplayName(group.row, group.meta))
+    if (!nameKey) continue
+    if (seen.has(nameKey)) continue
+    seen.add(nameKey)
+    output.push(group)
+  }
+
+  return output
+}
+
 async function fetchMarkdown(rawUrl: string) {
   if (!rawUrl) return ''
   let url: URL
@@ -1862,8 +1877,9 @@ export async function GET(request: NextRequest) {
     const filteredGroups = starThreshold === null
       ? allGroups
       : allGroups.filter(group => Math.max(group.meta.stars, group.githubStars) > starThreshold)
-    const verifiedGroups = verifiedOnly ? filteredGroups : []
-    const apiGroups = verifiedOnly ? verifiedGroups : filteredGroups
+    const uniqueNameGroups = dedupeGroupsByDisplayName(filteredGroups)
+    const verifiedGroups = verifiedOnly ? uniqueNameGroups : []
+    const apiGroups = verifiedOnly ? verifiedGroups : uniqueNameGroups
     const start = (page - 1) * limit
     const buildResponseItem = async (group: DedupeGroup, index: number) => {
       const hydratedGroup = await hydrateDedupeGroup(group)
@@ -1964,6 +1980,7 @@ export async function GET(request: NextRequest) {
       total: apiGroups.length,
       total_verified: verifiedOnly ? verifiedGroups.length : null,
       total_before_markdown_filter: filteredGroups.length,
+      total_before_name_dedupe: filteredGroups.length,
       total_before_star_filter: starThreshold === null ? allGroups.length : null,
       deduped: groupedRawRows - allGroups.length,
       star_filter: starThreshold === null ? null : {
