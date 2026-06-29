@@ -566,6 +566,36 @@ function githubRepoFromUrl(value?: string | null) {
   }
 }
 
+function githubCloneUrl(repo?: string | null) {
+  const normalized = normalizeGithubRepo(repo)
+  return normalized ? `https://github.com/${normalized}.git` : ''
+}
+
+function githubSkillInstallUrlFromSource(value?: string | null) {
+  if (!value) return ''
+  try {
+    const url = new URL(value)
+    if (/^raw\.githubusercontent\.com$/i.test(url.hostname)) {
+      const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent)
+      if (parts.length < 4) return ''
+      const skillDir = parts.slice(3).join('/').replace(/\/SKILL\.md$/i, '')
+      if (!skillDir || skillDir === parts.slice(3).join('/')) return ''
+      return `https://github.com/${parts[0]}/${parts[1]}/tree/${encodeURIComponent(parts[2])}/${skillDir.split('/').map(encodeURIComponent).join('/')}`
+    }
+
+    if (!/^github\.com$/i.test(url.hostname)) return ''
+    const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent)
+    const marker = parts.findIndex(part => part === 'blob' || part === 'tree')
+    if (marker < 0 || parts.length <= marker + 2) return ''
+    const sourcePath = parts.slice(marker + 2).join('/')
+    const skillDir = sourcePath.replace(/\/SKILL\.md$/i, '')
+    if (!skillDir || skillDir === sourcePath) return ''
+    return `https://github.com/${parts[0]}/${parts[1]}/tree/${encodeURIComponent(parts[marker + 1])}/${skillDir.split('/').map(encodeURIComponent).join('/')}`
+  } catch {
+    return ''
+  }
+}
+
 function githubBlobToRawUrl(value?: string | null) {
   if (!value) return ''
   try {
@@ -733,7 +763,10 @@ function githubMetadata(row: {
   const raw = parseJson<Record<string, any>>(row.rawData, {})
   const github = raw.github && typeof raw.github === 'object' ? raw.github : {}
   const item = raw.item && typeof raw.item === 'object' ? raw.item : {}
+  const skillMdUrl = firstString(raw.skillMdUrl, github.skillMdUrl, row.sourceUrl, row.githubUrl)
+  const sourceRepo = githubRepoFromUrl(skillMdUrl)
   const repo = normalizeGithubRepo(firstString(
+    sourceRepo,
     raw.originalRepo,
     github.originalRepo,
     raw.installRepo,
@@ -757,9 +790,15 @@ function githubMetadata(row: {
     githubRepoFromUrl(item.html_url),
   ))
   const repoUrl = repo ? `https://github.com/${repo}` : ''
-  const skillMdUrl = firstString(raw.skillMdUrl, github.skillMdUrl, row.sourceUrl, row.githubUrl)
   const skillMdRawUrl = firstString(raw.skillMdRawUrl, github.skillMdRawUrl, githubBlobToRawUrl(skillMdUrl))
-  const installGitUrl = firstString(raw.installGitUrl, github.installGitUrl, row.downloadUrl, repoUrl ? `${repoUrl}.git` : '')
+  const installGitUrl = firstString(
+    githubSkillInstallUrlFromSource(skillMdUrl),
+    sourceRepo ? githubCloneUrl(sourceRepo) : '',
+    raw.installGitUrl,
+    github.installGitUrl,
+    row.downloadUrl,
+    githubCloneUrl(repo),
+  )
   const installCount = Math.max(
     toNumber(row.downloads),
     toNumber(raw.installs),

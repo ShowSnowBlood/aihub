@@ -346,6 +346,31 @@ function githubCloneUrl(repo?: string | null) {
   return key ? `https://github.com/${key}.git` : ''
 }
 
+function githubSkillInstallUrlFromSource(value?: string | null) {
+  if (!value) return ''
+  try {
+    const url = new URL(value)
+    if (/^raw\.githubusercontent\.com$/i.test(url.hostname)) {
+      const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent)
+      if (parts.length < 4) return ''
+      const sourcePath = parts.slice(3).join('/')
+      const skillDir = sourcePath.replace(/\/skill\.md$/i, '')
+      if (!skillDir || skillDir === sourcePath) return ''
+      return `https://github.com/${parts[0]}/${parts[1]}/tree/${encodeURIComponent(parts[2])}/${skillDir.split('/').map(encodeURIComponent).join('/')}`
+    }
+    if (!/^github\.com$/i.test(url.hostname)) return ''
+    const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent)
+    const marker = parts.findIndex(part => part === 'blob' || part === 'tree')
+    if (marker < 0 || parts.length <= marker + 2) return ''
+    const sourcePath = parts.slice(marker + 2).join('/')
+    const skillDir = sourcePath.replace(/\/skill\.md$/i, '')
+    if (!skillDir || skillDir === sourcePath) return ''
+    return `https://github.com/${parts[0]}/${parts[1]}/tree/${encodeURIComponent(parts[marker + 1])}/${skillDir.split('/').map(encodeURIComponent).join('/')}`
+  } catch {
+    return ''
+  }
+}
+
 function githubInfoFromSkill(skill: {
   rawData?: string | null
   sourceUrl?: string | null
@@ -359,7 +384,15 @@ function githubInfoFromSkill(skill: {
   const raw = parseJson<Record<string, any>>(skill.rawData, {})
   const github = raw.github && typeof raw.github === 'object' ? raw.github : {}
   const item = raw.item && typeof raw.item === 'object' ? raw.item : {}
+  const sourceUrl = firstString(
+    raw.skillMdUrl,
+    github.skillMdUrl,
+    skill.sourceUrl && skill.sourceUrl.includes('github.com') && !isGithubRepoHomeUrl(skill.sourceUrl) ? skill.sourceUrl : '',
+    skill.githubUrl && skill.githubUrl.includes('github.com') && !isGithubRepoHomeUrl(skill.githubUrl) ? skill.githubUrl : '',
+    raw.githubUrl && !isGithubRepoHomeUrl(raw.githubUrl) ? raw.githubUrl : '',
+  )
   const repo = normalizeGithubRepo(firstString(
+    githubRepoFromUrl(sourceUrl),
     raw.originalRepo,
     github.originalRepo,
     raw.installRepo,
@@ -392,15 +425,8 @@ function githubInfoFromSkill(skill: {
     raw.repoUrl,
     github.repoUrl,
   )
-  const installRepo = normalizeGithubRepo(firstString(raw.installRepo, github.installRepo, repo, githubRepoFromUrl(skill.downloadUrl), githubRepoFromUrl(raw.installGitUrl), githubRepoFromUrl(github.installGitUrl)))
-  const installGitUrl = firstString(skill.downloadUrl, raw.installGitUrl, github.installGitUrl, githubCloneUrl(installRepo))
-  const sourceUrl = firstString(
-    raw.skillMdUrl,
-    github.skillMdUrl,
-    skill.sourceUrl && skill.sourceUrl.includes('github.com') && !isGithubRepoHomeUrl(skill.sourceUrl) ? skill.sourceUrl : '',
-    skill.githubUrl && skill.githubUrl.includes('github.com') && !isGithubRepoHomeUrl(skill.githubUrl) ? skill.githubUrl : '',
-    raw.githubUrl && !isGithubRepoHomeUrl(raw.githubUrl) ? raw.githubUrl : '',
-  )
+  const installRepo = normalizeGithubRepo(firstString(githubRepoFromUrl(sourceUrl), raw.installRepo, github.installRepo, repo, githubRepoFromUrl(skill.downloadUrl), githubRepoFromUrl(raw.installGitUrl), githubRepoFromUrl(github.installGitUrl)))
+  const installGitUrl = firstString(githubSkillInstallUrlFromSource(sourceUrl), githubCloneUrl(githubRepoFromUrl(sourceUrl)), skill.downloadUrl, raw.installGitUrl, github.installGitUrl, githubCloneUrl(installRepo))
   const skillPath = firstString(raw.skillMdPath, github.skillMdPath, github.skillPath, raw.file, githubSkillPathFromUrl(sourceUrl))
   const stars = Math.max(toNumber(skill.stars), toNumber(github.stars ?? raw.stars))
   const forks = Math.max(toNumber(skill.forks), toNumber(github.forks ?? raw.forks))
